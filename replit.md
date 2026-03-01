@@ -12,6 +12,8 @@ Clipora.ai is an AI-powered web SaaS that automatically converts long-form video
 
 ## Key Features
 - User registration/login with session-based auth
+- Social login buttons (Google, Facebook, GitHub, Apple) — UI ready, OAuth pending API keys
+- Admin account: admin@clipora.ai / Admin@123 (role=admin, plan=pro)
 - Video upload (MP4, MOV, MKV, AVI, WebM) up to 2GB
 - AI-simulated video processing pipeline:
   - Audio transcription (Whisper simulation)
@@ -20,17 +22,20 @@ Clipora.ai is an AI-powered web SaaS that automatically converts long-form video
   - Vertical 9:16 formatting
 - Real-time job status polling (3-second interval)
 - Clip management: edit, delete, download
+- Social media account connection (Instagram, TikTok, YouTube, X/Twitter, Facebook, LinkedIn)
+- Direct export with AI-generated SEO titles, descriptions, and hashtags per platform
 - Subscription plans: Free (3 videos/month) vs Pro (unlimited)
 - Dark/light mode toggle
 
 ## Routes
 ### Frontend Pages
 - `/` — Landing page (marketing)
-- `/login` — Login
-- `/register` — Registration
+- `/login` — Login (with social login buttons)
+- `/register` — Registration (with social login buttons)
 - `/dashboard` — Video library (auth required)
 - `/upload` — Upload video (auth required)
-- `/video/:id` — Video detail with clips & transcript (auth required)
+- `/video/:id` — Video detail with clips, transcript & export (auth required)
+- `/settings` — Account info, connected social accounts, subscription (auth required)
 - `/pricing` — Pricing plans
 
 ### Backend API (all prefixed with `/api/v1/`)
@@ -48,12 +53,21 @@ Clipora.ai is an AI-powered web SaaS that automatically converts long-form video
 - `PATCH /clips/:id` — Update clip title/description
 - `DELETE /clips/:id` — Delete clip
 - `GET /jobs/:id` — Get job status
+- `GET /accounts/connected` — List user's connected social accounts
+- `POST /accounts/connect` — Connect a social media account
+- `DELETE /accounts/:id` — Disconnect a social media account
+- `POST /exports/create` — Export clip to a platform (with AI SEO)
+- `GET /exports/clip/:clipId` — Get exports for a clip
+- `GET /exports/user` — Get all user exports
+- `POST /exports/generate-seo` — Generate AI SEO content preview
 
 ## Database Schema
-- **users**: id, email, username, password, plan, videoCount, createdAt
+- **users**: id, email, username, password, plan, videoCount, role, authProvider, createdAt
 - **videos**: id, userId, title, originalFilename, fileSize, duration, status, transcript, thumbnailUrl, createdAt, updatedAt
 - **clips**: id, videoId, title, description, hashtags, startTime, endTime, duration, viralityScore, filename, transcriptSegment, createdAt
 - **jobs**: id, videoId, status, progress, currentStep, errorLog, retryCount, createdAt, updatedAt
+- **connected_accounts**: id, userId, platform, platformUsername, platformDisplayName, platformAvatar, connected, accessToken, refreshToken, connectedAt
+- **exports**: id, clipId, userId, platform, seoTitle, seoDescription, seoHashtags, status, platformPostUrl, errorLog, createdAt
 
 ## Background Worker (server/worker.ts)
 Polls for pending jobs every 5 seconds and simulates the AI processing pipeline:
@@ -68,18 +82,19 @@ Polls for pending jobs every 5 seconds and simulates the AI processing pipeline:
 ## File Structure
 ```
 client/src/
-  pages/          — landing, login, register, dashboard, upload, video-detail, pricing, not-found
-  components/     — app-sidebar, clip-card, video-card, theme-toggle
+  pages/          — landing, login, register, dashboard, upload, video-detail, settings, pricing, not-found
+  components/     — app-sidebar, clip-card, video-card, theme-toggle, social-login-buttons, export-dialog
   components/ui/  — shadcn components
   context/        — AuthContext
   lib/            — api.ts, queryClient.ts, utils.ts
 
 server/
-  index.ts        — Express entry point + session setup + worker startup
-  routes.ts       — All API routes
+  index.ts        — Express entry point + session setup + worker startup + admin seed
+  routes.ts       — All API routes (auth, videos, clips, jobs, accounts, exports)
   storage.ts      — Database storage interface
   db.ts           — Drizzle database connection
   worker.ts       — Background video processing worker
+  seed.ts         — Admin account seeder
 
 shared/
   schema.ts       — Drizzle schema + Zod types

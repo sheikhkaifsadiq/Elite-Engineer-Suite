@@ -14,11 +14,12 @@ import {
 } from "lucide-react";
 import { api } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
-import type { Clip } from "@shared/schema";
+import type { Clip, ConnectedAccount } from "@shared/schema";
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { ExportDialog } from "@/components/export-dialog";
 import { useState } from "react";
 import { formatDistanceToNow } from "date-fns";
 
@@ -41,6 +42,16 @@ export default function VideoDetailPage() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [deleteClipId, setDeleteClipId] = useState<string | null>(null);
+  const [exportClip, setExportClip] = useState<Clip | null>(null);
+
+  const { data: connectedAccounts = [] } = useQuery({
+    queryKey: ["/api/v1/accounts/connected"],
+    queryFn: async () => {
+      const res = await api.accounts.list();
+      const json = await res.json();
+      return json.data as ConnectedAccount[];
+    },
+  });
 
   const { data: video, isLoading, refetch } = useQuery({
     queryKey: ["/api/v1/videos", id],
@@ -266,6 +277,7 @@ export default function VideoDetailPage() {
                         clip={clip}
                         onDelete={(clipId) => setDeleteClipId(clipId)}
                         onUpdate={handleClipUpdate}
+                        onExport={(clip) => setExportClip(clip)}
                       />
                     ))}
                   </div>
@@ -329,6 +341,15 @@ export default function VideoDetailPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {exportClip && (
+        <ExportDialog
+          open={!!exportClip}
+          onOpenChange={(open) => !open && setExportClip(null)}
+          clip={exportClip}
+          connectedAccounts={connectedAccounts}
+        />
+      )}
     </div>
   );
 }

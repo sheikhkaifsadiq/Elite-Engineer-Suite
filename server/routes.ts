@@ -2,7 +2,26 @@ import type { Express, Request, Response } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { insertUserSchema, loginSchema, insertVideoSchema } from "@shared/schema";
+import { z } from "zod";
 import bcrypt from "bcrypt";
+
+const VALID_PLATFORMS = ["instagram", "tiktok", "youtube", "twitter", "facebook", "linkedin"] as const;
+
+const connectAccountSchema = z.object({
+  platform: z.enum(VALID_PLATFORMS),
+  platformUsername: z.string().min(1, "Username is required").max(100),
+  platformDisplayName: z.string().max(100).optional(),
+});
+
+const createExportSchema = z.object({
+  clipId: z.string().min(1),
+  platform: z.enum(VALID_PLATFORMS),
+});
+
+const generateSEOSchema = z.object({
+  clipId: z.string().min(1),
+  platform: z.enum(VALID_PLATFORMS),
+});
 import multer from "multer";
 import path from "path";
 import fs from "fs";
@@ -298,5 +317,226 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     }
   });
 
+  app.get("/api/v1/accounts/connected", requireAuth as any, async (req: any, res) => {
+    try {
+      const accounts = await storage.getConnectedAccounts(req.session.userId);
+      res.json({ success: true, data: accounts });
+    } catch {
+      res.status(500).json({ success: false, error: "Failed to fetch connected accounts", code: 500 });
+    }
+  });
+
+  app.post("/api/v1/accounts/connect", requireAuth as any, async (req: any, res) => {
+    try {
+      const parsed = connectAccountSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ success: false, error: parsed.error.errors[0].message, code: 400 });
+      }
+      const { platform, platformUsername, platformDisplayName } = parsed.data;
+
+      const existing = await storage.getConnectedAccountByPlatform(req.session.userId, platform);
+      if (existing) {
+        const updated = await storage.updateConnectedAccount(existing.id, {
+          platformUsername,
+          platformDisplayName: platformDisplayName || platformUsername,
+          connected: true,
+        });
+        return res.json({ success: true, data: updated, message: `${platform} account reconnected` });
+      }
+
+      const account = await storage.createConnectedAccount({
+        userId: req.session.userId,
+        platform,
+        platformUsername,
+        platformDisplayName: platformDisplayName || platformUsername,
+        connected: true,
+      });
+      res.json({ success: true, data: account, message: `${platform} account connected` });
+    } catch {
+      res.status(500).json({ success: false, error: "Failed to connect account", code: 500 });
+    }
+  });
+
+  app.delete("/api/v1/accounts/:id", requireAuth as any, async (req: any, res) => {
+    try {
+      const account = await storage.getConnectedAccount(req.params.id);
+      if (!account || account.userId !== req.session.userId) {
+        return res.status(404).json({ success: false, error: "Account not found", code: 404 });
+      }
+      await storage.deleteConnectedAccount(req.params.id);
+      res.json({ success: true, message: "Account disconnected" });
+    } catch {
+      res.status(500).json({ success: false, error: "Failed to disconnect account", code: 500 });
+    }
+  });
+
+  app.post("/api/v1/exports/create", requireAuth as any, async (req: any, res) => {
+    try {
+      const parsed = createExportSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ success: false, error: parsed.error.errors[0].message, code: 400 });
+      }
+      const { clipId, platform } = parsed.data;
+
+      const clip = await storage.getClip(clipId);
+      if (!clip) return res.status(404).json({ success: false, error: "Clip not found", code: 404 });
+
+      const video = await storage.getVideo(clip.videoId);
+      if (!video || video.userId !== req.session.userId) {
+        return res.status(404).json({ success: false, error: "Clip not found", code: 404 });
+      }
+
+      const connectedAccount = await storage.getConnectedAccountByPlatform(req.session.userId, platform);
+      if (!connectedAccount || !connectedAccount.connected) {
+        return res.status(400).json({ success: false, error: `No ${platform} account connected. Please connect your account first.`, code: 400 });
+      }
+
+      const seoData = generateSEOContent(clip.title, clip.description || "", clip.transcriptSegment || "", platform, clip.hashtags || []);
+
+      const exportRecord = await storage.createExport({
+        clipId,
+        userId: req.session.userId,
+        platform,
+        seoTitle: seoData.title,
+        seoDescription: seoData.description,
+        seoHashtags: seoData.hashtags,
+        status: "pending",
+      });
+
+      setTimeout(async () => {
+        try {
+          await storage.updateExport(exportRecord.id, {
+            status: "published",
+            platformPostUrl: `https://${platform}.com/p/${exportRecord.id.slice(0, 8)}`,
+          });
+        } catch (err) {
+          await storage.updateExport(exportRecord.id, {
+            status: "failed",
+            errorLog: "Simulated export error",
+          });
+        }
+      }, 3000);
+
+      res.json({ success: true, data: { ...exportRecord, seo: seoData }, message: `Export to ${platform} started` });
+    } catch {
+      res.status(500).json({ success: false, error: "Failed to create export", code: 500 });
+    }
+  });
+
+  app.get("/api/v1/exports/clip/:clipId", requireAuth as any, async (req: any, res) => {
+    try {
+      const clip = await storage.getClip(req.params.clipId);
+      if (!clip) return res.status(404).json({ success: false, error: "Clip not found", code: 404 });
+      const video = await storage.getVideo(clip.videoId);
+      if (!video || video.userId !== req.session.userId) {
+        return res.status(404).json({ success: false, error: "Clip not found", code: 404 });
+      }
+      const exportList = await storage.getExportsByClip(req.params.clipId);
+      res.json({ success: true, data: exportList });
+    } catch {
+      res.status(500).json({ success: false, error: "Failed to fetch exports", code: 500 });
+    }
+  });
+
+  app.get("/api/v1/exports/user", requireAuth as any, async (req: any, res) => {
+    try {
+      const exportList = await storage.getExportsByUser(req.session.userId);
+      res.json({ success: true, data: exportList });
+    } catch {
+      res.status(500).json({ success: false, error: "Failed to fetch exports", code: 500 });
+    }
+  });
+
+  app.post("/api/v1/exports/generate-seo", requireAuth as any, async (req: any, res) => {
+    try {
+      const parsed = generateSEOSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ success: false, error: parsed.error.errors[0].message, code: 400 });
+      }
+      const { clipId, platform } = parsed.data;
+      const clip = await storage.getClip(clipId);
+      if (!clip) return res.status(404).json({ success: false, error: "Clip not found", code: 404 });
+      const video = await storage.getVideo(clip.videoId);
+      if (!video || video.userId !== req.session.userId) {
+        return res.status(404).json({ success: false, error: "Clip not found", code: 404 });
+      }
+
+      const seo = generateSEOContent(clip.title, clip.description || "", clip.transcriptSegment || "", platform, clip.hashtags || []);
+      res.json({ success: true, data: seo });
+    } catch {
+      res.status(500).json({ success: false, error: "Failed to generate SEO content", code: 500 });
+    }
+  });
+
   return httpServer;
+}
+
+function generateSEOContent(title: string, description: string, transcript: string, platform: string, existingHashtags: string[]) {
+  const platformConfigs: Record<string, { maxTitle: number; maxDesc: number; hashtagCount: number; style: string }> = {
+    instagram: { maxTitle: 60, maxDesc: 2200, hashtagCount: 15, style: "engaging and visual" },
+    tiktok: { maxTitle: 80, maxDesc: 300, hashtagCount: 8, style: "trendy and catchy" },
+    youtube: { maxTitle: 100, maxDesc: 5000, hashtagCount: 10, style: "SEO-optimized and searchable" },
+    twitter: { maxTitle: 50, maxDesc: 280, hashtagCount: 5, style: "concise and impactful" },
+    facebook: { maxTitle: 80, maxDesc: 1000, hashtagCount: 5, style: "engaging and shareable" },
+    linkedin: { maxTitle: 80, maxDesc: 700, hashtagCount: 5, style: "professional and insightful" },
+  };
+
+  const config = platformConfigs[platform] || platformConfigs.instagram;
+
+  const seoTitleOptions: Record<string, string[]> = {
+    instagram: [
+      `This will blow your mind - ${title}`,
+      `You need to see this: ${title}`,
+      `Wait for it... ${title}`,
+    ],
+    tiktok: [
+      `POV: ${title} hits different`,
+      `No one talks about this - ${title}`,
+      `This changed everything: ${title}`,
+    ],
+    youtube: [
+      `${title} - The Complete Breakdown`,
+      `Why ${title} Changes Everything`,
+      `${title} Explained in Under 60 Seconds`,
+    ],
+    twitter: [
+      `Thread: ${title}`,
+      `Hot take: ${title}`,
+      `${title} - here's why it matters`,
+    ],
+    facebook: [
+      `Have you seen this? ${title}`,
+      `${title} - Share if you agree`,
+      `Mind-blowing: ${title}`,
+    ],
+    linkedin: [
+      `Key Insight: ${title}`,
+      `${title} - A Perspective Worth Sharing`,
+      `Lessons from: ${title}`,
+    ],
+  };
+
+  const titleOptions = seoTitleOptions[platform] || seoTitleOptions.instagram;
+  const seoTitle = titleOptions[Math.floor(Math.random() * titleOptions.length)].slice(0, config.maxTitle);
+
+  const descParts = [
+    description || transcript.slice(0, 100),
+    `\n\nGenerated by Clipora.ai - AI Video Repurposing`,
+  ];
+  const seoDescription = descParts.join("").slice(0, config.maxDesc);
+
+  const platformHashtags: Record<string, string[]> = {
+    instagram: ["#reels", "#viral", "#trending", "#explorepage", "#fyp", "#contentcreator", "#instagood"],
+    tiktok: ["#fyp", "#foryoupage", "#viral", "#trending", "#tiktokviral", "#foryou"],
+    youtube: ["#shorts", "#youtubeShorts", "#viral", "#trending", "#subscribe"],
+    twitter: ["#trending", "#viral", "#mustwatch", "#content"],
+    facebook: ["#viral", "#trending", "#sharethis", "#amazing"],
+    linkedin: ["#professional", "#insights", "#leadership", "#growth"],
+  };
+
+  const baseHashtags = platformHashtags[platform] || platformHashtags.instagram;
+  const combined = [...new Set([...existingHashtags, ...baseHashtags])];
+  const seoHashtags = combined.slice(0, config.hashtagCount);
+
+  return { title: seoTitle, description: seoDescription, hashtags: seoHashtags, platform, config };
 }

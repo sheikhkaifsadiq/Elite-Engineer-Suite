@@ -12,6 +12,7 @@ import { useToast } from "@/hooks/use-toast";
 const navItems = [
   { title: "Dashboard", url: "/dashboard", icon: LayoutDashboard },
   { title: "Upload Video", url: "/upload", icon: Upload },
+  { title: "Settings", url: "/settings", icon: Settings },
   { title: "Pricing", url: "/pricing", icon: CreditCard },
 ];
 

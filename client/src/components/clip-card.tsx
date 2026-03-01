@@ -2,7 +2,7 @@ import { Clip } from "@shared/schema";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Download, Trash2, Edit2, Flame, Clock, Hash } from "lucide-react";
+import { Download, Trash2, Edit2, Flame, Clock, Hash, Send } from "lucide-react";
 import { useState } from "react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -15,6 +15,7 @@ interface ClipCardProps {
   clip: Clip;
   onDelete?: (id: string) => void;
   onUpdate?: (clip: Clip) => void;
+  onExport?: (clip: Clip) => void;
 }
 
 function viralityColor(score: number): string {
@@ -29,7 +30,7 @@ function formatTime(seconds: number): string {
   return `${m}:${s.toString().padStart(2, "0")}`;
 }
 
-export function ClipCard({ clip, onDelete, onUpdate }: ClipCardProps) {
+export function ClipCard({ clip, onDelete, onUpdate, onExport }: ClipCardProps) {
   const [editOpen, setEditOpen] = useState(false);
   const [title, setTitle] = useState(clip.title);
   const [description, setDescription] = useState(clip.description || "");
@@ -110,6 +111,17 @@ export function ClipCard({ clip, onDelete, onUpdate }: ClipCardProps) {
                 <Download className="w-3 h-3" />
                 Download
               </Button>
+              {onExport && (
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  onClick={() => onExport(clip)}
+                  data-testid={`button-export-clip-${clip.id}`}
+                  title="Export to social media"
+                >
+                  <Send className="w-3.5 h-3.5" />
+                </Button>
+              )}
               <Button
                 size="icon"
                 variant="ghost"

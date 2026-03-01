@@ -15,8 +15,9 @@ import DashboardPage from "@/pages/dashboard";
 import UploadPage from "@/pages/upload";
 import VideoDetailPage from "@/pages/video-detail";
 import PricingPage from "@/pages/pricing";
+import SettingsPage from "@/pages/settings";
 
-const AUTH_ROUTES = ["/dashboard", "/upload"];
+const AUTH_ROUTES = ["/dashboard", "/upload", "/settings"];
 const VIDEO_ROUTES_PATTERN = /^\/video\//;
 
 function AppLayout() {
@@ -55,6 +56,7 @@ function AppLayout() {
                 <Route path="/dashboard" component={DashboardPage} />
                 <Route path="/upload" component={UploadPage} />
                 <Route path="/video/:id" component={VideoDetailPage} />
+                <Route path="/settings" component={SettingsPage} />
                 <Route component={NotFound} />
               </Switch>
             </main>

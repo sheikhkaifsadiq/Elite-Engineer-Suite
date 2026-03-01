@@ -11,6 +11,7 @@ import { api } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { SocialLoginButtons } from "@/components/social-login-buttons";
 
 const schema = z.object({
   email: z.string().email("Enter a valid email"),
@@ -88,7 +89,8 @@ export default function RegisterPage() {
           </div>
 
           <Card>
-            <CardContent className="pt-5">
+            <CardContent className="pt-5 space-y-4">
+              <SocialLoginButtons mode="register" />
               <Form {...form}>
                 <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
                   <FormField

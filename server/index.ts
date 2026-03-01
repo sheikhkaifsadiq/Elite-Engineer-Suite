@@ -6,6 +6,7 @@ import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";
 import { createServer } from "http";
 import { runWorker } from "./worker";
+import { seedAdminAccount } from "./seed";
 
 const app = express();
 const httpServer = createServer(app);
@@ -110,6 +111,7 @@ app.use((req, res, next) => {
     { port, host: "0.0.0.0", reusePort: true },
     () => {
       log(`serving on port ${port}`);
+      seedAdminAccount().catch(err => console.error("[Seed] Error:", err));
       runWorker().catch(err => console.error("[Worker] Fatal error:", err));
     },
   );

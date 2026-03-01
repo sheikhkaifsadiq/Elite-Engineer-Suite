@@ -27,4 +27,18 @@ export const api = {
   jobs: {
     get: (id: string) => fetch(`/api/v1/jobs/${id}`, { credentials: "include" }),
   },
+  accounts: {
+    list: () => fetch("/api/v1/accounts/connected", { credentials: "include" }),
+    connect: (data: { platform: string; platformUsername: string; platformDisplayName?: string }) =>
+      apiRequest("POST", "/api/v1/accounts/connect", data),
+    disconnect: (id: string) => apiRequest("DELETE", `/api/v1/accounts/${id}`),
+  },
+  exports: {
+    create: (data: { clipId: string; platform: string }) =>
+      apiRequest("POST", "/api/v1/exports/create", data),
+    getByClip: (clipId: string) => fetch(`/api/v1/exports/clip/${clipId}`, { credentials: "include" }),
+    getAll: () => fetch("/api/v1/exports/user", { credentials: "include" }),
+    generateSEO: (data: { clipId: string; platform: string }) =>
+      apiRequest("POST", "/api/v1/exports/generate-seo", data),
+  },
 };
