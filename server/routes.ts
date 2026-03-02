@@ -63,10 +63,11 @@ function sanitizeClip(clip: any) {
 
 function sanitizeVideo(video: any) {
   if (!video) return video;
-  const { filePath, ...safe } = video;
+  const { filePath, thumbnailUrl, ...safe } = video;
   return {
     ...safe,
     hasFile: !!filePath,
+    hasThumbnail: !!thumbnailUrl,
     clips: video.clips?.map(sanitizeClip),
   };
 }

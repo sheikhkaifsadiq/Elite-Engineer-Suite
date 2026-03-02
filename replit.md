@@ -30,6 +30,9 @@ Clipora.ai is an AI-powered web SaaS that automatically converts long-form video
   - Automatic profile modifications: username → username.clipora, bio → Clipora branding, avatar → Clipora logo
   - Original profile data preserved for revert on disconnect
 - Direct export with AI-generated SEO titles, descriptions, and hashtags per platform
+- Dashboard video cards with thumbnail previews (clickable cards navigate to detail)
+- Video detail page with rich layout: preview area, info sidebar, clips grid, transcript
+- Delete from video detail page: navigates back to dashboard with cache invalidation
 - Anti-theft watermark protection:
   - Two-file pipeline: each clip generates both `_clean.mp4` and `_watermarked.mp4`
   - Watermarked version has floating Clipora logo that orbits the center (uncrop-proof)
