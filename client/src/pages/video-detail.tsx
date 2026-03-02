@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import { api } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/context/AuthContext";
 import type { Clip, ConnectedAccount } from "@shared/schema";
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
@@ -40,6 +41,7 @@ function StatusBadge({ status }: { status: string }) {
 export default function VideoDetailPage() {
   const { id } = useParams<{ id: string }>();
   const { toast } = useToast();
+  const { user } = useAuth();
   const queryClient = useQueryClient();
   const [deleteClipId, setDeleteClipId] = useState<string | null>(null);
   const [exportClip, setExportClip] = useState<Clip | null>(null);
@@ -278,6 +280,7 @@ export default function VideoDetailPage() {
                         onDelete={(clipId) => setDeleteClipId(clipId)}
                         onUpdate={handleClipUpdate}
                         onExport={(clip) => setExportClip(clip)}
+                        userPlan={user?.plan || "free"}
                       />
                     ))}
                   </div>

@@ -30,7 +30,13 @@ Clipora.ai is an AI-powered web SaaS that automatically converts long-form video
   - Automatic profile modifications: username → username.clipora, bio → Clipora branding, avatar → Clipora logo
   - Original profile data preserved for revert on disconnect
 - Direct export with AI-generated SEO titles, descriptions, and hashtags per platform
-- Subscription plans: Free (3 videos/month) vs Pro (unlimited)
+- Anti-theft watermark protection:
+  - Two-file pipeline: each clip generates both `_clean.mp4` and `_watermarked.mp4`
+  - Watermarked version has floating Clipora logo that orbits the center (uncrop-proof)
+  - Frontend player/preview always streams the watermarked version via `/clips/:id/stream`
+  - Clean clip URL never exposed in DOM or network requests
+  - Download route checks user plan: Pro → clean file, Free → watermarked file or 403
+- Subscription plans: Free (3 videos/month, watermarked downloads) vs Pro (unlimited, clean downloads)
 - Dark/light mode toggle
 
 ## Routes
@@ -57,7 +63,8 @@ Clipora.ai is an AI-powered web SaaS that automatically converts long-form video
 - `GET /videos/:id/clips` — Get clips for video
 - `GET /videos/:id/thumbnail` — Serve video thumbnail image
 - `GET /clips/:id` — Get individual clip
-- `GET /clips/:id/download` — Download clip MP4 file
+- `GET /clips/:id/stream` — Stream watermarked clip for preview (always watermarked)
+- `GET /clips/:id/download` — Download clip (Pro→clean, Free→watermarked or 403)
 - `GET /clips/:id/thumbnail` — Serve clip thumbnail
 - `PATCH /clips/:id` — Update clip title/description
 - `DELETE /clips/:id` — Delete clip
@@ -73,7 +80,7 @@ Clipora.ai is an AI-powered web SaaS that automatically converts long-form video
 ## Database Schema
 - **users**: id, email, username, password, plan, videoCount, role, authProvider, createdAt
 - **videos**: id, userId, title, originalFilename, fileSize, duration, status, transcript, thumbnailUrl, filePath, width, height, fps, codec, bitrate, createdAt, updatedAt
-- **clips**: id, videoId, title, description, hashtags, startTime, endTime, duration, viralityScore, filename, transcriptSegment, clipFilePath, thumbnailPath, createdAt
+- **clips**: id, videoId, title, description, hashtags, startTime, endTime, duration, viralityScore, filename, transcriptSegment, clipFilePath, watermarkedFilePath, thumbnailPath, createdAt
 - **jobs**: id, videoId, status, progress, currentStep, errorLog, retryCount, createdAt, updatedAt
 - **connected_accounts**: id, userId, platform, platformUsername, platformDisplayName, platformAvatar, platformEmail, connected, authorized, permissions[], originalUsername, originalBio, originalAvatar, modifiedUsername, modifiedBio, profileModified, accessToken, refreshToken, connectedAt
 - **exports**: id, clipId, userId, platform, seoTitle, seoDescription, seoHashtags, status, platformPostUrl, errorLog, createdAt

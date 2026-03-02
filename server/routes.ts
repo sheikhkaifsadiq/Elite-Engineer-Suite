@@ -50,6 +50,27 @@ function requireAuth(req: Request, res: Response, next: Function) {
   next();
 }
 
+function sanitizeClip(clip: any) {
+  if (!clip) return clip;
+  const { clipFilePath, watermarkedFilePath, thumbnailPath, ...safe } = clip;
+  return {
+    ...safe,
+    hasClipFile: !!clipFilePath,
+    hasWatermark: !!watermarkedFilePath,
+    hasThumbnail: !!thumbnailPath,
+  };
+}
+
+function sanitizeVideo(video: any) {
+  if (!video) return video;
+  const { filePath, ...safe } = video;
+  return {
+    ...safe,
+    hasFile: !!filePath,
+    clips: video.clips?.map(sanitizeClip),
+  };
+}
+
 export async function registerRoutes(httpServer: Server, app: Express): Promise<Server> {
   if (!fs.existsSync("uploads")) fs.mkdirSync("uploads", { recursive: true });
 
@@ -159,7 +180,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
         retryCount: 0,
       });
 
-      res.json({ success: true, data: { video, job }, message: "Video uploaded successfully" });
+      res.json({ success: true, data: { video: sanitizeVideo(video), job }, message: "Video uploaded successfully" });
     } catch (err: any) {
       res.status(500).json({ success: false, error: "Upload failed: " + err.message, code: 500 });
     }
@@ -173,7 +194,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
         const clipCount = (await storage.getClipsByVideo(video.id)).length;
         return { ...video, job, clipCount };
       }));
-      res.json({ success: true, data: videosWithJobs });
+      res.json({ success: true, data: videosWithJobs.map(sanitizeVideo) });
     } catch {
       res.status(500).json({ success: false, error: "Failed to fetch videos", code: 500 });
     }
@@ -187,7 +208,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       }
       const job = await storage.getJobByVideo(video.id);
       const clipList = await storage.getClipsByVideo(video.id);
-      res.json({ success: true, data: { ...video, job, clips: clipList } });
+      res.json({ success: true, data: sanitizeVideo({ ...video, job, clips: clipList }) });
     } catch {
       res.status(500).json({ success: false, error: "Failed to fetch video", code: 500 });
     }
@@ -238,7 +259,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
         return res.status(404).json({ success: false, error: "Video not found", code: 404 });
       }
       const clipList = await storage.getClipsByVideo(req.params.id);
-      res.json({ success: true, data: clipList });
+      res.json({ success: true, data: clipList.map(sanitizeClip) });
     } catch {
       res.status(500).json({ success: false, error: "Failed to fetch clips", code: 500 });
     }
@@ -252,7 +273,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       if (!video || video.userId !== req.session.userId) {
         return res.status(404).json({ success: false, error: "Clip not found", code: 404 });
       }
-      res.json({ success: true, data: clip });
+      res.json({ success: true, data: sanitizeClip(clip) });
     } catch {
       res.status(500).json({ success: false, error: "Failed to fetch clip", code: 500 });
     }
@@ -277,7 +298,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
         else updates.duration = endTime - clip.startTime;
       }
       const updated = await storage.updateClip(req.params.id, updates);
-      res.json({ success: true, data: updated });
+      res.json({ success: true, data: sanitizeClip(updated) });
     } catch {
       res.status(500).json({ success: false, error: "Failed to update clip", code: 500 });
     }
@@ -519,6 +540,29 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     }
   });
 
+  app.get("/api/v1/clips/:id/stream", requireAuth as any, async (req: any, res) => {
+    try {
+      const clip = await storage.getClip(req.params.id);
+      if (!clip) return res.status(404).json({ success: false, error: "Clip not found", code: 404 });
+      const video = await storage.getVideo(clip.videoId);
+      if (!video || video.userId !== req.session.userId) {
+        return res.status(404).json({ success: false, error: "Clip not found", code: 404 });
+      }
+      const watermarkedPath = clip.watermarkedFilePath;
+      if (watermarkedPath && fs.existsSync(watermarkedPath)) {
+        const stat = fs.statSync(watermarkedPath);
+        res.setHeader("Content-Type", "video/mp4");
+        res.setHeader("Content-Length", stat.size);
+        res.setHeader("Accept-Ranges", "bytes");
+        res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, private");
+        return fs.createReadStream(watermarkedPath).pipe(res);
+      }
+      return res.status(404).json({ success: false, error: "Watermarked clip not yet generated. Processing may still be in progress.", code: 404 });
+    } catch {
+      res.status(500).json({ success: false, error: "Failed to stream clip", code: 500 });
+    }
+  });
+
   app.get("/api/v1/clips/:id/download", requireAuth as any, async (req: any, res) => {
     try {
       const clip = await storage.getClip(req.params.id);
@@ -527,13 +571,37 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       if (!video || video.userId !== req.session.userId) {
         return res.status(404).json({ success: false, error: "Clip not found", code: 404 });
       }
-      if (clip.clipFilePath && fs.existsSync(clip.clipFilePath)) {
-        const filename = clip.filename || `clip_${clip.id}.mp4`;
+
+      const user = await storage.getUser(req.session.userId);
+      if (!user) return res.status(401).json({ success: false, error: "User not found", code: 401 });
+
+      if (user.plan === "pro") {
+        if (clip.clipFilePath && fs.existsSync(clip.clipFilePath)) {
+          const filename = clip.filename || `clip_${clip.id}.mp4`;
+          const stat = fs.statSync(clip.clipFilePath);
+          res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+          res.setHeader("Content-Type", "video/mp4");
+          res.setHeader("Content-Length", stat.size);
+          return fs.createReadStream(clip.clipFilePath).pipe(res);
+        }
+        return res.status(404).json({ success: false, error: "Clean clip file not yet generated", code: 404 });
+      }
+
+      if (clip.watermarkedFilePath && fs.existsSync(clip.watermarkedFilePath)) {
+        const filename = `watermarked_${clip.filename || `clip_${clip.id}.mp4`}`;
+        const stat = fs.statSync(clip.watermarkedFilePath);
         res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
         res.setHeader("Content-Type", "video/mp4");
-        return fs.createReadStream(clip.clipFilePath).pipe(res);
+        res.setHeader("Content-Length", stat.size);
+        return fs.createReadStream(clip.watermarkedFilePath).pipe(res);
       }
-      return res.status(404).json({ success: false, error: "Clip file not yet generated or unavailable", code: 404 });
+
+      return res.status(403).json({
+        success: false,
+        error: "Upgrade to Pro to download clean clips without watermark",
+        code: 403,
+        upgradeRequired: true,
+      });
     } catch {
       res.status(500).json({ success: false, error: "Failed to download clip", code: 500 });
     }

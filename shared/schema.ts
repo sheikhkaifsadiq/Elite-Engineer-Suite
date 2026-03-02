@@ -48,6 +48,7 @@ export const clips = pgTable("clips", {
   filename: text("filename"),
   transcriptSegment: text("transcript_segment"),
   clipFilePath: text("clip_file_path"),
+  watermarkedFilePath: text("watermarked_file_path"),
   thumbnailPath: text("thumbnail_path"),
   createdAt: timestamp("created_at").defaultNow(),
 });

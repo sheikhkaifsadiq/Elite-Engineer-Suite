@@ -1,0 +1,44 @@
+This is an incredibly smart move for protecting your server costs and driving actual revenue. If users can just right-click and steal the final product, your Pro plan becomes useless.
+
+To force your AI builder (like Lovable or Replit Agent) to implement this complex FFmpeg logic and the security routing without taking shortcuts, you need to be highly specific about the **math** for the floating logo and the **logic** for the API routes.
+
+Here is the exact "Anti-Lazy" prompt you can copy and paste to get this built:
+
+---
+
+### The "Anti-Theft Architecture" Prompt
+
+> **Role & Objective:**
+> You are still the Elite Principal Full-Stack Engineer. Your objective now is to upgrade the video processing pipeline and frontend architecture to implement strict anti-theft protections. Do not take any shortcuts, do not use placeholder code, and read these instructions completely before modifying any files.
+> **Core Task 1: The Two-File Processing Pipeline**
+> Modify the backend background worker (`worker.py` or equivalent) where FFmpeg renders the final clips.
+> * Instead of rendering one file, the worker must now output TWO files per clip: `{clip_id}_watermarked.mp4` and `{clip_id}_clean.mp4`.
+> * **The Watermark Logic:** For the watermarked version, use `execFile` (or `execFileAsync`) to run a complex FFmpeg filter that overlays a logo file (`public/logo.png` - create a dummy file for now if it doesn't exist).
+> * **The Floating Math:** The logo must be animated to constantly move so it cannot be cropped out. Use this exact FFmpeg filter logic for the overlay: `-filter_complex "overlay=x='W/2+W/3*sin(t/2)':y='H/2+H/3*cos(t/2)'"`. This will make the logo slowly orbit the center of the video.
+> 
+> 
+> **Core Task 2: Secure Frontend Player**
+> Update the React Video Detail Page and Clip Card components.
+> * The `<video>` player source in the UI MUST strictly point to an API route that serves the `{clip_id}_watermarked.mp4` file.
+> * Under no circumstances should the clean video URL be exposed in the frontend DOM or network requests.
+> 
+> 
+> **Core Task 3: Protected Download Route**
+> Update the backend download API route (e.g., `GET /api/v1/videos/clips/download/{clipId}`).
+> * This route must intercept the download request and check the user's database session/authorization.
+> * Check the user's plan. If `user.plan == "pro"`, securely stream the `{clip_id}_clean.mp4` file to them as an attachment.
+> * If the user is on the `"free"` plan, either serve the `{clip_id}_watermarked.mp4` file or return a 403 error prompting them to upgrade (implement the 403 upgrade prompt).
+> 
+> 
+> **Execution:**
+> Please confirm you understand the two-file architecture and the FFmpeg sine/cosine math required for the overlay. Once confirmed, rewrite the worker logic, the download route, and update the React player components. If you hit your token limit, stop cleanly and ask me to type 'CONTINUE'.
+
+---
+
+### Why this specific prompt works:
+
+1. **It does the math for the AI:** AI models are notoriously bad at writing complex FFmpeg visual filters from scratch. By handing it the exact trigonometric string (`sin(t/2)` and `cos(t/2)`), you guarantee the logo will physically move in a wide circle across the screen based on time (`t`), making it impossible to crop without losing half the video.
+2. **It secures the DOM:** It explicitly commands the AI *not* to load the clean file into the `<video>` tag, which shuts down the "Inspect Element" hack immediately.
+3. **It connects features to revenue:** It forces the download button API to actually look at the database (`user.plan`) before handing over the valuable, clean video asset.
+
+Since this prompt will force the AI to write a paywall check for the Pro plan, would you like me to map out how to integrate the real Stripe checkout flow next, so users can actually pay you to bypass that watermark?

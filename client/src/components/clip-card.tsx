@@ -2,8 +2,8 @@ import { Clip } from "@shared/schema";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Download, Trash2, Edit2, Flame, Clock, Hash, Send } from "lucide-react";
-import { useState } from "react";
+import { Download, Trash2, Edit2, Flame, Clock, Hash, Send, Play, ShieldAlert } from "lucide-react";
+import { useState, useRef } from "react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
@@ -16,6 +16,7 @@ interface ClipCardProps {
   onDelete?: (id: string) => void;
   onUpdate?: (clip: Clip) => void;
   onExport?: (clip: Clip) => void;
+  userPlan?: string;
 }
 
 function viralityColor(score: number): string {
@@ -30,12 +31,15 @@ function formatTime(seconds: number): string {
   return `${m}:${s.toString().padStart(2, "0")}`;
 }
 
-export function ClipCard({ clip, onDelete, onUpdate, onExport }: ClipCardProps) {
+export function ClipCard({ clip, onDelete, onUpdate, onExport, userPlan = "free" }: ClipCardProps) {
   const [editOpen, setEditOpen] = useState(false);
+  const [previewOpen, setPreviewOpen] = useState(false);
   const [title, setTitle] = useState(clip.title);
   const [description, setDescription] = useState(clip.description || "");
   const [saving, setSaving] = useState(false);
   const { toast } = useToast();
+  const clipAny = clip as any;
+  const hasVideo = !!(clipAny.hasClipFile || clipAny.hasWatermark || clip.clipFilePath || clip.watermarkedFilePath);
 
   const handleSave = async () => {
     setSaving(true);
@@ -56,17 +60,45 @@ export function ClipCard({ clip, onDelete, onUpdate, onExport }: ClipCardProps) 
     }
   };
 
-  const handleDownload = () => {
-    if (clip.clipFilePath) {
-      const link = document.createElement("a");
-      link.href = `/api/v1/clips/${clip.id}/download`;
-      link.download = clip.filename || `clip_${clip.id}.mp4`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      toast({ title: "Download started", description: `${clip.title} — Downloading clip` });
-    } else {
+  const handleDownload = async () => {
+    if (!hasVideo) {
       toast({ title: "Clip file not available", description: "The clip file has not been generated yet. Please process the video first.", variant: "destructive" });
+      return;
+    }
+    try {
+      const res = await fetch(`/api/v1/clips/${clip.id}/download`, { credentials: "include" });
+      if (res.ok) {
+        const blob = await res.blob();
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        const disposition = res.headers.get("Content-Disposition");
+        const filenameMatch = disposition?.match(/filename="?([^"]+)"?/);
+        link.href = url;
+        link.download = filenameMatch?.[1] || clip.filename || `clip_${clip.id}.mp4`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+        toast({
+          title: userPlan === "pro" ? "Clean clip downloaded" : "Watermarked clip downloaded",
+          description: userPlan === "pro"
+            ? `${clip.title} — No watermark (Pro)`
+            : `${clip.title} — Upgrade to Pro for clean downloads`,
+        });
+      } else {
+        const json = await res.json();
+        if (json.upgradeRequired) {
+          toast({
+            title: "Pro plan required",
+            description: "Upgrade to Pro to download clean clips without the Clipora watermark.",
+            variant: "destructive",
+          });
+        } else {
+          toast({ title: json.error || "Download failed", variant: "destructive" });
+        }
+      }
+    } catch {
+      toast({ title: "Download failed", variant: "destructive" });
     }
   };
 
@@ -74,8 +106,12 @@ export function ClipCard({ clip, onDelete, onUpdate, onExport }: ClipCardProps) 
     <>
       <Card className="hover-elevate" data-testid={`card-clip-${clip.id}`}>
         <CardContent className="p-0">
-          <div className="relative h-28 bg-gradient-to-br from-primary/20 via-primary/10 to-muted rounded-t-lg flex items-center justify-center overflow-hidden">
-            {clip.thumbnailPath ? (
+          <div
+            className="relative h-28 bg-gradient-to-br from-primary/20 via-primary/10 to-muted rounded-t-lg flex items-center justify-center overflow-hidden cursor-pointer group"
+            onClick={() => hasVideo && setPreviewOpen(true)}
+            data-testid={`clip-preview-${clip.id}`}
+          >
+            {(clipAny.hasThumbnail || clip.thumbnailPath) ? (
               <img
                 src={`/api/v1/clips/${clip.id}/thumbnail`}
                 alt={clip.title}
@@ -83,9 +119,20 @@ export function ClipCard({ clip, onDelete, onUpdate, onExport }: ClipCardProps) 
                 onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
               />
             ) : null}
-            <div className={`text-center ${clip.thumbnailPath ? "absolute inset-0 flex flex-col items-center justify-center bg-black/40" : ""}`}>
-              <p className="text-xs font-mono text-muted-foreground">{formatTime(clip.startTime)} → {formatTime(clip.endTime)}</p>
-              <p className="text-xs text-muted-foreground mt-1">{clip.duration.toFixed(0)}s</p>
+            <div className={`text-center ${(clipAny.hasThumbnail || clip.thumbnailPath) ? "absolute inset-0 flex flex-col items-center justify-center bg-black/40" : ""}`}>
+              {hasVideo ? (
+                <div className="flex flex-col items-center gap-1">
+                  <div className="w-8 h-8 rounded-full bg-white/20 backdrop-blur-sm flex items-center justify-center group-hover:bg-white/30 transition-colors">
+                    <Play className="w-4 h-4 text-white fill-white" />
+                  </div>
+                  <p className="text-xs font-mono text-white/80">{formatTime(clip.startTime)} → {formatTime(clip.endTime)}</p>
+                </div>
+              ) : (
+                <>
+                  <p className="text-xs font-mono text-muted-foreground">{formatTime(clip.startTime)} → {formatTime(clip.endTime)}</p>
+                  <p className="text-xs text-muted-foreground mt-1">{clip.duration.toFixed(0)}s</p>
+                </>
+              )}
             </div>
             <div className="absolute top-2 right-2">
               <Badge variant="secondary" className={`gap-1 text-xs font-bold ${viralityColor(clip.viralityScore)}`}>
@@ -126,8 +173,17 @@ export function ClipCard({ clip, onDelete, onUpdate, onExport }: ClipCardProps) 
                 onClick={handleDownload}
                 data-testid={`button-download-clip-${clip.id}`}
               >
-                <Download className="w-3 h-3" />
-                Download
+                {userPlan === "pro" ? (
+                  <>
+                    <Download className="w-3 h-3" />
+                    Download HD
+                  </>
+                ) : (
+                  <>
+                    <ShieldAlert className="w-3 h-3" />
+                    Download
+                  </>
+                )}
               </Button>
               {onExport && (
                 <Button
@@ -163,6 +219,36 @@ export function ClipCard({ clip, onDelete, onUpdate, onExport }: ClipCardProps) 
           </div>
         </CardContent>
       </Card>
+
+      <Dialog open={previewOpen} onOpenChange={setPreviewOpen}>
+        <DialogContent className="max-w-md p-0 overflow-hidden">
+          <div className="bg-black aspect-[9/16] max-h-[70vh] flex items-center justify-center">
+            {previewOpen && hasVideo && (
+              <video
+                key={clip.id}
+                controls
+                autoPlay
+                className="w-full h-full object-contain"
+                data-testid={`video-player-${clip.id}`}
+              >
+                <source src={`/api/v1/clips/${clip.id}/stream`} type="video/mp4" />
+              </video>
+            )}
+          </div>
+          <div className="p-3 flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium">{clip.title}</p>
+              <p className="text-xs text-muted-foreground">Watermarked preview</p>
+            </div>
+            {userPlan !== "pro" && (
+              <Badge variant="outline" className="text-xs gap-1">
+                <ShieldAlert className="w-3 h-3" />
+                Watermarked
+              </Badge>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={editOpen} onOpenChange={setEditOpen}>
         <DialogContent>

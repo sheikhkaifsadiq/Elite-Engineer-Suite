@@ -140,6 +140,39 @@ async function generateClipThumbnail(clipPath: string, outputPath: string): Prom
   }
 }
 
+const LOGO_PATH = path.resolve("public/logo.png");
+
+async function generateWatermarkedClip(cleanPath: string, watermarkedPath: string): Promise<boolean> {
+  try {
+    if (!fs.existsSync(LOGO_PATH)) {
+      console.error("[Worker] Logo file not found at", LOGO_PATH);
+      return false;
+    }
+    await execFileAsync(
+      "ffmpeg",
+      [
+        "-y",
+        "-i", cleanPath,
+        "-i", LOGO_PATH,
+        "-filter_complex",
+        "overlay=x='W/2+W/3*sin(t/2)':y='H/2+H/3*cos(t/2)'",
+        "-c:v", "libx264",
+        "-preset", "ultrafast",
+        "-crf", "28",
+        "-c:a", "aac",
+        "-b:a", "128k",
+        "-movflags", "+faststart",
+        watermarkedPath,
+      ],
+      { timeout: 180000 }
+    );
+    return fs.existsSync(watermarkedPath);
+  } catch (err: any) {
+    console.error("[Worker] Watermarked clip generation error:", err.message);
+    return false;
+  }
+}
+
 function calculateClipSegments(totalDuration: number): { start: number; duration: number }[] {
   const segments: { start: number; duration: number }[] = [];
   const clipDuration = Math.min(60, Math.max(15, totalDuration / 5));
@@ -258,24 +291,33 @@ async function processJob(jobId: string) {
 
     for (let i = 0; i < clipSegments.length; i++) {
       const seg = clipSegments[i];
-      const clipFilename = `clip_${job.videoId}_${i + 1}.mp4`;
-      const clipPath = path.join(CLIPS_DIR, clipFilename);
+      const clipFilenameClean = `clip_${job.videoId}_${i + 1}_clean.mp4`;
+      const clipFilenameWatermarked = `clip_${job.videoId}_${i + 1}_watermarked.mp4`;
+      const clipPathClean = path.join(CLIPS_DIR, clipFilenameClean);
+      const clipPathWatermarked = path.join(CLIPS_DIR, clipFilenameWatermarked);
       const clipThumbPath = path.join(THUMBNAILS_DIR, `clip_${job.videoId}_${i + 1}.jpg`);
       const segment = sentences.slice(i, i + 2).join(". ").trim();
       const score = scoreKeywords(segment);
 
-      let clipGenerated = false;
+      let cleanGenerated = false;
+      let watermarkedGenerated = false;
       let thumbGenerated = false;
 
       if (actualFilePath) {
         await storage.updateJob(jobId, {
-          progress: 65 + ((i + 1) / clipSegments.length) * 25,
-          currentStep: `Rendering clip ${i + 1}/${clipSegments.length} with FFmpeg (vertical 9:16 + subtitles)`
+          progress: 65 + ((i + 0.3) / clipSegments.length) * 25,
+          currentStep: `Rendering clean clip ${i + 1}/${clipSegments.length} with FFmpeg (vertical 9:16)`
         });
 
-        clipGenerated = await extractClip(actualFilePath, clipPath, seg.start, seg.duration);
-        if (clipGenerated) {
-          thumbGenerated = await generateClipThumbnail(clipPath, clipThumbPath);
+        cleanGenerated = await extractClip(actualFilePath, clipPathClean, seg.start, seg.duration);
+
+        if (cleanGenerated) {
+          await storage.updateJob(jobId, {
+            progress: 65 + ((i + 0.7) / clipSegments.length) * 25,
+            currentStep: `Rendering watermarked clip ${i + 1}/${clipSegments.length} with floating logo`
+          });
+          watermarkedGenerated = await generateWatermarkedClip(clipPathClean, clipPathWatermarked);
+          thumbGenerated = await generateClipThumbnail(clipPathClean, clipThumbPath);
         }
       } else {
         await storage.updateJob(jobId, {
@@ -294,13 +336,14 @@ async function processJob(jobId: string) {
         endTime: seg.start + seg.duration,
         duration: seg.duration,
         viralityScore: score,
-        filename: clipFilename,
+        filename: clipFilenameClean,
         transcriptSegment: segment || `Highlight segment from ${seg.start.toFixed(0)}s`,
-        clipFilePath: clipGenerated ? clipPath : null,
+        clipFilePath: cleanGenerated ? clipPathClean : null,
+        watermarkedFilePath: watermarkedGenerated ? clipPathWatermarked : null,
         thumbnailPath: thumbGenerated ? clipThumbPath : null,
       });
 
-      console.log(`[Worker] Clip ${i + 1} created: ${clipFilename} (${seg.duration.toFixed(1)}s, score: ${score})${clipGenerated ? " [file generated]" : " [metadata only]"}`);
+      console.log(`[Worker] Clip ${i + 1}: clean=${cleanGenerated}, watermarked=${watermarkedGenerated}, thumb=${thumbGenerated} (${seg.duration.toFixed(1)}s, score: ${score})`);
     }
 
     await storage.updateJob(jobId, {
