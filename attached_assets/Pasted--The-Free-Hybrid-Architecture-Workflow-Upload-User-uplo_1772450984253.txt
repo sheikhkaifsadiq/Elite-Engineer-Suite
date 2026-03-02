@@ -1,0 +1,37 @@
+🔵 The Free Hybrid Architecture Workflow
+Upload: User uploads a video to your server.
+
+The AI Brain: Your backend sends the video file to the Google Gemini 1.5 Flash API (which gives you a massive 1,500 free requests per day).
+
+The Extraction: You prompt Gemini to analyze the video and return a strict JSON response containing the top 3 viral moments, including start_timestamp, end_timestamp, viral_score, and an array of the spoken subtitles.
+
+The Muscle: Your background worker reads that JSON. It passes the timestamps and subtitle text into a local FFmpeg command.
+
+The Render: FFmpeg crops the video to 9:16, overlays the subtitles using the exact timings, adds your floating anti-theft watermark, and exports the final .mp4.
+
+🚨 The "Google AI Studio + FFmpeg" Builder Prompt
+To force your AI builder (Lovable/Replit Agent) to construct this exact free workflow, copy and paste this prompt:
+
+Role & Objective:
+You are the Elite Principal Full-Stack Engineer. We are shifting to a Free Hybrid Architecture. We will use the Google Gemini 1.5 API (via Google AI Studio) as the AI Brain for video understanding, and local FFmpeg as the rendering engine. Do NOT use Sieve, Fal.ai, or any paid API.
+
+Core Task 1: Gemini Video Understanding Integration
+
+Install the @google/generative-ai (or Python equivalent) SDK.
+
+Create an AI service file. When a video is uploaded, use the Gemini File API to upload the video to Google AI Studio.
+
+Prompt the gemini-1.5-flash model with the video file. The prompt MUST strictly demand a JSON output containing an array of 3 clips. Each clip object must include: start_time_seconds, end_time_seconds, viral_title, virality_score, and a transcript array (containing text and exact micro-timestamps for subtitles).
+
+Core Task 2: Smart FFmpeg Rendering
+
+Update our background worker. It must wait for the Gemini API to return the JSON data.
+
+Loop through the 3 returned clips. For each clip, dynamically build an FFmpeg command using execFileAsync.
+
+The FFmpeg command MUST: slice the video using the start_time_seconds and end_time_seconds, apply a crop filter for 9:16 vertical format, and generate a .srt or ASS subtitle file from the Gemini transcript data to burn onto the video.
+
+Maintain the Two-File Anti-Theft architecture: output one watermarked.mp4 (using the floating sine/cosine math overlay) and one clean.mp4 for each clip.
+
+Execution:
+Acknowledge this hybrid approach. Begin by writing the Gemini 1.5 API integration and the strict JSON prompting logic. Stop and ask me to type 'CONTINUE' if you reach your token limit.
