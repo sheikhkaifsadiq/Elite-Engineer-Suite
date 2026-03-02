@@ -21,6 +21,7 @@ import {
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { ExportDialog } from "@/components/export-dialog";
+import { ClipEditorDialog } from "@/components/clip-editor-dialog";
 import { useState } from "react";
 import { formatDistanceToNow, format } from "date-fns";
 
@@ -65,6 +66,7 @@ export default function VideoDetailPage() {
   const [deleteClipId, setDeleteClipId] = useState<string | null>(null);
   const [showDeleteVideo, setShowDeleteVideo] = useState(false);
   const [exportClip, setExportClip] = useState<Clip | null>(null);
+  const [editClip, setEditClip] = useState<Clip | null>(null);
   const [thumbError, setThumbError] = useState(false);
 
   const { data: connectedAccounts = [] } = useQuery({
@@ -79,9 +81,12 @@ export default function VideoDetailPage() {
   const { data: video, isLoading, refetch } = useQuery({
     queryKey: ["/api/v1/videos", id],
     queryFn: () => fetchVideoDetail(id),
-    refetchInterval: (data) => {
-      if (!data) return false;
-      const status = data.job?.status;
+    staleTime: 0,
+    refetchOnMount: "always" as const,
+    refetchInterval: (query: any) => {
+      const d = query?.state?.data;
+      if (!d) return 3000;
+      const status = d.job?.status;
       return status === "pending" || status === "processing" ? 3000 : false;
     },
   });
@@ -400,6 +405,7 @@ export default function VideoDetailPage() {
                     onDelete={(clipId) => setDeleteClipId(clipId)}
                     onUpdate={handleClipUpdate}
                     onExport={(clip) => setExportClip(clip)}
+                    onEdit={(clip) => setEditClip(clip)}
                     userPlan={user?.plan || "free"}
                   />
                 ))}
@@ -478,6 +484,16 @@ export default function VideoDetailPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {editClip && (
+        <ClipEditorDialog
+          open={!!editClip}
+          onOpenChange={(open) => !open && setEditClip(null)}
+          clip={editClip}
+          videoDuration={video?.duration || 120}
+          onRegenerated={() => refetch()}
+        />
+      )}
 
       {exportClip && (
         <ExportDialog

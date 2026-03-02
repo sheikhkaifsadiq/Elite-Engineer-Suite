@@ -31,9 +31,10 @@ export default function DashboardPage() {
   const { data: videos, isLoading, refetch } = useQuery({
     queryKey: ["/api/v1/videos/list"],
     queryFn: fetchVideos,
-    refetchInterval: (data) => {
-      if (!data || !Array.isArray(data)) return false;
-      const hasActiveJob = data.some(
+    refetchInterval: (query: any) => {
+      const d = query?.state?.data;
+      if (!d || !Array.isArray(d)) return false;
+      const hasActiveJob = d.some(
         (v: any) => v.job?.status === "pending" || v.job?.status === "processing"
       );
       return hasActiveJob ? 3000 : false;

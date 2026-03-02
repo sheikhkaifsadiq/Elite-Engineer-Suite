@@ -50,6 +50,7 @@ export const clips = pgTable("clips", {
   clipFilePath: text("clip_file_path"),
   watermarkedFilePath: text("watermarked_file_path"),
   thumbnailPath: text("thumbnail_path"),
+  captionStyle: text("caption_style").default("classic"),
   createdAt: timestamp("created_at").defaultNow(),
 });
 

@@ -4,6 +4,7 @@ import { storage } from "./storage";
 import { insertUserSchema, loginSchema, insertVideoSchema } from "@shared/schema";
 import { z } from "zod";
 import bcrypt from "bcrypt";
+import { regenerateClip, CAPTION_STYLES } from "./worker";
 
 const VALID_PLATFORMS = ["instagram", "tiktok", "youtube", "twitter", "facebook", "linkedin"] as const;
 
@@ -276,6 +277,17 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     }
   });
 
+  app.get("/api/v1/clips/caption-styles", requireAuth as any, async (_req: any, res) => {
+    const styles = Object.entries(CAPTION_STYLES).map(([key, val]) => ({
+      id: key,
+      name: key.charAt(0).toUpperCase() + key.slice(1),
+      fontsize: val.fontsize,
+      fontcolor: val.fontcolor,
+      hasBox: val.boxEnabled,
+    }));
+    res.json({ success: true, data: styles });
+  });
+
   app.get("/api/v1/clips/:id", requireAuth as any, async (req: any, res) => {
     try {
       const clip = await storage.getClip(req.params.id);
@@ -327,6 +339,38 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       res.json({ success: true, message: "Clip deleted" });
     } catch {
       res.status(500).json({ success: false, error: "Failed to delete clip", code: 500 });
+    }
+  });
+
+  app.post("/api/v1/clips/:id/regenerate", requireAuth as any, async (req: any, res) => {
+    try {
+      const clip = await storage.getClip(req.params.id);
+      if (!clip) return res.status(404).json({ success: false, error: "Clip not found", code: 404 });
+      const video = await storage.getVideo(clip.videoId);
+      if (!video || video.userId !== req.session.userId) {
+        return res.status(404).json({ success: false, error: "Clip not found", code: 404 });
+      }
+
+      const { startTime, endTime, captionStyle } = req.body;
+      const start = typeof startTime === "number" ? startTime : clip.startTime;
+      const end = typeof endTime === "number" ? endTime : clip.endTime;
+      const style = typeof captionStyle === "string" && captionStyle in CAPTION_STYLES ? captionStyle : clip.captionStyle || "classic";
+
+      if (end <= start || end - start < 1) {
+        return res.status(400).json({ success: false, error: "Invalid time range (minimum 1 second)", code: 400 });
+      }
+
+      if (!video.filePath || !fs.existsSync(video.filePath)) {
+        return res.status(400).json({ success: false, error: "Original video file not available", code: 400 });
+      }
+
+      res.json({ success: true, message: "Regeneration started", data: { clipId: clip.id } });
+
+      regenerateClip(clip.id, { startTime: start, endTime: end, captionStyle: style }).catch(err => {
+        console.error(`[Routes] Regenerate clip ${clip.id} failed:`, err);
+      });
+    } catch {
+      res.status(500).json({ success: false, error: "Failed to regenerate clip", code: 500 });
     }
   });
 

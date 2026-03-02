@@ -45,6 +45,77 @@ const CLIP_HASHTAGS = [
   ["#tech", "#innovation", "#ai", "#future", "#revolutionary"]
 ];
 
+const CAPTION_STYLES: Record<string, { fontsize: number; fontcolor: string; borderw: number; shadowcolor: string; shadowx: number; shadowy: number; boxEnabled: boolean; boxcolor: string; boxborderw: number }> = {
+  classic: {
+    fontsize: 42,
+    fontcolor: "white",
+    borderw: 3,
+    shadowcolor: "black@0.6",
+    shadowx: 2,
+    shadowy: 2,
+    boxEnabled: false,
+    boxcolor: "",
+    boxborderw: 0,
+  },
+  bold: {
+    fontsize: 52,
+    fontcolor: "yellow",
+    borderw: 4,
+    shadowcolor: "black@0.8",
+    shadowx: 3,
+    shadowy: 3,
+    boxEnabled: false,
+    boxcolor: "",
+    boxborderw: 0,
+  },
+  boxed: {
+    fontsize: 40,
+    fontcolor: "white",
+    borderw: 0,
+    shadowcolor: "black@0",
+    shadowx: 0,
+    shadowy: 0,
+    boxEnabled: true,
+    boxcolor: "black@0.7",
+    boxborderw: 12,
+  },
+  neon: {
+    fontsize: 44,
+    fontcolor: "#00ffcc",
+    borderw: 3,
+    shadowcolor: "#00ffcc@0.4",
+    shadowx: 0,
+    shadowy: 0,
+    boxEnabled: false,
+    boxcolor: "",
+    boxborderw: 0,
+  },
+  minimal: {
+    fontsize: 36,
+    fontcolor: "white@0.9",
+    borderw: 2,
+    shadowcolor: "black@0.4",
+    shadowx: 1,
+    shadowy: 1,
+    boxEnabled: false,
+    boxcolor: "",
+    boxborderw: 0,
+  },
+  none: {
+    fontsize: 0,
+    fontcolor: "",
+    borderw: 0,
+    shadowcolor: "",
+    shadowx: 0,
+    shadowy: 0,
+    boxEnabled: false,
+    boxcolor: "",
+    boxborderw: 0,
+  },
+};
+
+const FONT_PATH = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf";
+
 function scoreKeywords(text: string): number {
   const lower = text.toLowerCase();
   let score = 40;
@@ -105,20 +176,84 @@ async function generateVideoThumbnail(filePath: string, outputPath: string, time
   }
 }
 
-async function extractClip(
+function buildCaptionDrawtext(captionText: string, styleName: string): string {
+  const style = CAPTION_STYLES[styleName] || CAPTION_STYLES.classic;
+  if (styleName === "none" || !captionText || style.fontsize === 0) return "";
+
+  const escaped = captionText
+    .replace(/\\/g, "\\\\\\\\")
+    .replace(/'/g, "\u2019")
+    .replace(/:/g, "\\:")
+    .replace(/;/g, "\\;")
+    .replace(/\[/g, "\\[")
+    .replace(/\]/g, "\\]")
+    .replace(/%/g, "%%");
+
+  const lines: string[] = [];
+  const words = escaped.split(/\s+/);
+  let currentLine = "";
+  for (const word of words) {
+    if (currentLine.length + word.length + 1 > 30) {
+      lines.push(currentLine.trim());
+      currentLine = word;
+    } else {
+      currentLine += (currentLine ? " " : "") + word;
+    }
+  }
+  if (currentLine.trim()) lines.push(currentLine.trim());
+  const wrappedText = lines.slice(0, 3).join("\\n");
+
+  let filter = `drawtext=text='${wrappedText}'`;
+  filter += `:fontfile=${FONT_PATH}`;
+  filter += `:fontsize=${style.fontsize}`;
+  filter += `:fontcolor=${style.fontcolor}`;
+  filter += `:x=(w-text_w)/2`;
+  filter += `:y=h-text_h-80`;
+  filter += `:borderw=${style.borderw}`;
+  filter += `:bordercolor=black`;
+  filter += `:shadowcolor=${style.shadowcolor}`;
+  filter += `:shadowx=${style.shadowx}`;
+  filter += `:shadowy=${style.shadowy}`;
+
+  if (style.boxEnabled) {
+    filter += `:box=1`;
+    filter += `:boxcolor=${style.boxcolor}`;
+    filter += `:boxborderw=${style.boxborderw}`;
+  }
+
+  return filter;
+}
+
+async function extractClipWithCaptions(
   inputPath: string,
   outputPath: string,
   startTime: number,
   duration: number,
+  captionText: string,
+  captionStyle: string = "classic",
   targetWidth: number = 1080,
   targetHeight: number = 1920
 ): Promise<boolean> {
   try {
-    const vf = `scale=${targetWidth}:${targetHeight}:force_original_aspect_ratio=decrease,pad=${targetWidth}:${targetHeight}:(ow-iw)/2:(oh-ih)/2:black`;
+    const scaleAndCrop = `scale=${targetWidth}:${targetHeight}:force_original_aspect_ratio=increase,crop=${targetWidth}:${targetHeight}`;
+
+    const captionFilter = buildCaptionDrawtext(captionText, captionStyle);
+    const vf = captionFilter
+      ? `${scaleAndCrop},${captionFilter}`
+      : scaleAndCrop;
+
     await execFileAsync(
       "ffmpeg",
-      ["-y", "-ss", String(startTime), "-i", inputPath, "-t", String(duration), "-vf", vf, "-c:v", "libx264", "-preset", "ultrafast", "-crf", "28", "-c:a", "aac", "-b:a", "128k", "-movflags", "+faststart", outputPath],
-      { timeout: 120000 }
+      [
+        "-y", "-ss", String(startTime), "-i", inputPath,
+        "-t", String(duration),
+        "-vf", vf,
+        "-c:v", "libx264", "-preset", "ultrafast", "-crf", "28",
+        "-c:a", "aac", "-b:a", "128k",
+        "-movflags", "+faststart",
+        outputPath,
+      ],
+      { timeout: 180000 }
     );
     return fs.existsSync(outputPath);
   } catch (err: any) {
@@ -140,22 +275,30 @@ async function generateClipThumbnail(clipPath: string, outputPath: string): Prom
   }
 }
 
-const LOGO_PATH = path.resolve("public/logo.png");
-
 async function generateWatermarkedClip(cleanPath: string, watermarkedPath: string): Promise<boolean> {
   try {
-    if (!fs.existsSync(LOGO_PATH)) {
-      console.error("[Worker] Logo file not found at", LOGO_PATH);
-      return false;
-    }
+    const watermarkFilter = [
+      `drawtext=text='Clipora':fontfile=${FONT_PATH}`,
+      `fontsize=36:fontcolor=white@0.25`,
+      `x='W/2+W/4*sin(t/2)-text_w/2':y='H/2+H/4*cos(t/3)-text_h/2'`,
+      `borderw=1:bordercolor=white@0.15`,
+    ].join(":");
+
+    const watermarkFilter2 = [
+      `drawtext=text='Clipora':fontfile=${FONT_PATH}`,
+      `fontsize=28:fontcolor=white@0.2`,
+      `x='W/2-W/4*cos(t/2.5)-text_w/2':y='H/3+H/5*sin(t/1.8)-text_h/2'`,
+      `borderw=1:bordercolor=white@0.1`,
+    ].join(":");
+
+    const vf = `${watermarkFilter},${watermarkFilter2}`;
+
     await execFileAsync(
       "ffmpeg",
       [
         "-y",
         "-i", cleanPath,
-        "-i", LOGO_PATH,
-        "-filter_complex",
-        "overlay=x='W/2+W/3*sin(t/2)':y='H/2+H/3*cos(t/2)'",
+        "-vf", vf,
         "-c:v", "libx264",
         "-preset", "ultrafast",
         "-crf", "28",
@@ -286,7 +429,7 @@ async function processJob(jobId: string) {
 
     await storage.updateJob(jobId, {
       progress: 65,
-      currentStep: `Generating ${clipSegments.length} clips with FFmpeg (9:16 vertical format)`
+      currentStep: `Generating ${clipSegments.length} clips with FFmpeg (9:16 crop + captions)`
     });
 
     for (let i = 0; i < clipSegments.length; i++) {
@@ -305,16 +448,19 @@ async function processJob(jobId: string) {
 
       if (actualFilePath) {
         await storage.updateJob(jobId, {
-          progress: 65 + ((i + 0.3) / clipSegments.length) * 25,
-          currentStep: `Rendering clean clip ${i + 1}/${clipSegments.length} with FFmpeg (vertical 9:16)`
+          progress: 65 + ((i + 0.2) / clipSegments.length) * 25,
+          currentStep: `Rendering clip ${i + 1}/${clipSegments.length} (crop to 9:16 + captions)`
         });
 
-        cleanGenerated = await extractClip(actualFilePath, clipPathClean, seg.start, seg.duration);
+        cleanGenerated = await extractClipWithCaptions(
+          actualFilePath, clipPathClean, seg.start, seg.duration,
+          segment, "classic"
+        );
 
         if (cleanGenerated) {
           await storage.updateJob(jobId, {
-            progress: 65 + ((i + 0.7) / clipSegments.length) * 25,
-            currentStep: `Rendering watermarked clip ${i + 1}/${clipSegments.length} with floating logo`
+            progress: 65 + ((i + 0.6) / clipSegments.length) * 25,
+            currentStep: `Adding transparent watermark to clip ${i + 1}/${clipSegments.length}`
           });
           watermarkedGenerated = await generateWatermarkedClip(clipPathClean, clipPathWatermarked);
           thumbGenerated = await generateClipThumbnail(clipPathClean, clipThumbPath);
@@ -330,7 +476,7 @@ async function processJob(jobId: string) {
       await storage.createClip({
         videoId: job.videoId,
         title: titlesForTranscript[i] || `Clip ${i + 1}`,
-        description: `AI-generated highlight clip optimized for vertical format and social media virality. Extracted from ${seg.start.toFixed(1)}s to ${(seg.start + seg.duration).toFixed(1)}s.`,
+        description: `AI-generated highlight clip cropped to 9:16 vertical format with burned-in captions. Extracted from ${seg.start.toFixed(1)}s to ${(seg.start + seg.duration).toFixed(1)}s.`,
         hashtags: hashtagsForTranscript,
         startTime: seg.start,
         endTime: seg.start + seg.duration,
@@ -341,6 +487,7 @@ async function processJob(jobId: string) {
         clipFilePath: cleanGenerated ? clipPathClean : null,
         watermarkedFilePath: watermarkedGenerated ? clipPathWatermarked : null,
         thumbnailPath: thumbGenerated ? clipThumbPath : null,
+        captionStyle: "classic",
       });
 
       console.log(`[Worker] Clip ${i + 1}: clean=${cleanGenerated}, watermarked=${watermarkedGenerated}, thumb=${thumbGenerated} (${seg.duration.toFixed(1)}s, score: ${score})`);
@@ -371,9 +518,68 @@ async function processJob(jobId: string) {
   }
 }
 
+async function regenerateClip(
+  clipId: string,
+  options: { startTime: number; endTime: number; captionStyle: string }
+): Promise<boolean> {
+  ensureDirs();
+  const clip = await storage.getClip(clipId);
+  if (!clip) return false;
+
+  const video = await storage.getVideo(clip.videoId);
+  if (!video) return false;
+
+  const filePath = video.filePath || path.join("uploads", path.basename(video.originalFilename));
+  if (!fs.existsSync(filePath)) return false;
+
+  const duration = options.endTime - options.startTime;
+  if (duration < 1) return false;
+
+  const clipFilenameClean = `clip_${clip.videoId}_${clip.id.slice(0, 8)}_clean.mp4`;
+  const clipFilenameWatermarked = `clip_${clip.videoId}_${clip.id.slice(0, 8)}_watermarked.mp4`;
+  const clipPathClean = path.join(CLIPS_DIR, clipFilenameClean);
+  const clipPathWatermarked = path.join(CLIPS_DIR, clipFilenameWatermarked);
+  const clipThumbPath = path.join(THUMBNAILS_DIR, `clip_${clip.videoId}_${clip.id.slice(0, 8)}.jpg`);
+
+  if (clip.clipFilePath && fs.existsSync(clip.clipFilePath)) {
+    try { fs.unlinkSync(clip.clipFilePath); } catch {}
+  }
+  if (clip.watermarkedFilePath && fs.existsSync(clip.watermarkedFilePath)) {
+    try { fs.unlinkSync(clip.watermarkedFilePath); } catch {}
+  }
+  if (clip.thumbnailPath && fs.existsSync(clip.thumbnailPath)) {
+    try { fs.unlinkSync(clip.thumbnailPath); } catch {}
+  }
+
+  const captionText = clip.transcriptSegment || "";
+  const cleanGenerated = await extractClipWithCaptions(
+    filePath, clipPathClean, options.startTime, duration,
+    captionText, options.captionStyle
+  );
+
+  if (!cleanGenerated) return false;
+
+  const watermarkedGenerated = await generateWatermarkedClip(clipPathClean, clipPathWatermarked);
+  const thumbGenerated = await generateClipThumbnail(clipPathClean, clipThumbPath);
+
+  await storage.updateClip(clipId, {
+    startTime: options.startTime,
+    endTime: options.endTime,
+    duration,
+    captionStyle: options.captionStyle,
+    clipFilePath: clipPathClean,
+    watermarkedFilePath: watermarkedGenerated ? clipPathWatermarked : null,
+    thumbnailPath: thumbGenerated ? clipThumbPath : null,
+    filename: clipFilenameClean,
+  });
+
+  console.log(`[Worker] Clip ${clipId} regenerated: clean=true, watermarked=${watermarkedGenerated}, thumb=${thumbGenerated} (${duration.toFixed(1)}s, style: ${options.captionStyle})`);
+  return true;
+}
+
 async function runWorker() {
   console.log("[Worker] Starting background video processing worker...");
-  console.log("[Worker] FFmpeg-powered clip generation enabled");
+  console.log("[Worker] FFmpeg-powered clip generation with 9:16 crop + captions");
 
   while (true) {
     try {
@@ -391,4 +597,4 @@ async function runWorker() {
   }
 }
 
-export { runWorker };
+export { runWorker, regenerateClip, CAPTION_STYLES };

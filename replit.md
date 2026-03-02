@@ -33,9 +33,17 @@ Clipora.ai is an AI-powered web SaaS that automatically converts long-form video
 - Dashboard video cards with thumbnail previews (clickable cards navigate to detail)
 - Video detail page with rich layout: preview area, info sidebar, clips grid, transcript
 - Delete from video detail page: navigates back to dashboard with cache invalidation
+- FFmpeg processing pipeline:
+  - Crop-to-fill 9:16 vertical format (no black bars — center crop)
+  - Burned-in closed captions at bottom with configurable styles (classic, bold, boxed, neon, minimal, none)
+  - Transparent floating text watermark (two orbiting "Clipora" drawtext overlays, no opaque background)
+- Clip editor UI:
+  - Trim sliders (adjust start/end time within video)
+  - Caption style picker (6 visual presets)
+  - Regenerate clip with new settings (re-renders via FFmpeg)
 - Anti-theft watermark protection:
   - Two-file pipeline: each clip generates both `_clean.mp4` and `_watermarked.mp4`
-  - Watermarked version has floating Clipora logo that orbits the center (uncrop-proof)
+  - Watermarked version has transparent floating "Clipora" text that orbits the frame
   - Frontend player/preview always streams the watermarked version via `/clips/:id/stream`
   - Clean clip URL never exposed in DOM or network requests
   - Download route checks user plan: Pro → clean file, Free → watermarked file or 403
@@ -69,7 +77,9 @@ Clipora.ai is an AI-powered web SaaS that automatically converts long-form video
 - `GET /clips/:id/stream` — Stream watermarked clip for preview (always watermarked)
 - `GET /clips/:id/download` — Download clip (Pro→clean, Free→watermarked or 403)
 - `GET /clips/:id/thumbnail` — Serve clip thumbnail
+- `GET /clips/caption-styles` — List available caption style presets
 - `PATCH /clips/:id` — Update clip title/description
+- `POST /clips/:id/regenerate` — Re-render clip with new trim/caption settings
 - `DELETE /clips/:id` — Delete clip
 - `GET /jobs/:id` — Get job status
 - `GET /accounts/connected` — List connected social accounts

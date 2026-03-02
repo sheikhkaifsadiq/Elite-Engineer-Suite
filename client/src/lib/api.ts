@@ -50,6 +50,9 @@ export const api = {
     update: (id: string, data: Partial<{ title: string; description: string; startTime: number; endTime: number }>) =>
       apiRequest("PATCH", `/api/v1/clips/${id}`, data),
     delete: (id: string) => apiRequest("DELETE", `/api/v1/clips/${id}`),
+    regenerate: (id: string, data: { startTime: number; endTime: number; captionStyle: string }) =>
+      apiRequest("POST", `/api/v1/clips/${id}/regenerate`, data),
+    captionStyles: () => fetch("/api/v1/clips/caption-styles", { credentials: "include" }),
   },
   jobs: {
     get: (id: string) => fetch(`/api/v1/jobs/${id}`, { credentials: "include" }),
