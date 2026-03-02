@@ -10,8 +10,35 @@ export const api = {
     me: () => fetch("/api/v1/auth/me", { credentials: "include" }),
   },
   videos: {
-    upload: (formData: FormData) =>
-      fetch("/api/v1/videos/upload", { method: "POST", body: formData, credentials: "include" }),
+    upload: (formData: FormData, onProgress?: (pct: number) => void) =>
+      new Promise<Response>((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        xhr.open("POST", "/api/v1/videos/upload");
+        xhr.withCredentials = true;
+        xhr.timeout = 10 * 60 * 1000;
+
+        if (onProgress) {
+          xhr.upload.onprogress = (e) => {
+            if (e.lengthComputable) {
+              onProgress(Math.round((e.loaded / e.total) * 100));
+            }
+          };
+        }
+
+        xhr.onload = () => {
+          const response = new Response(xhr.responseText, {
+            status: xhr.status,
+            statusText: xhr.statusText,
+            headers: { "Content-Type": "application/json" },
+          });
+          resolve(response);
+        };
+
+        xhr.onerror = () => reject(new Error("Network error — check your connection and try again"));
+        xhr.ontimeout = () => reject(new Error("Upload timed out — the file may be too large for the current connection speed"));
+
+        xhr.send(formData);
+      }),
     list: () => fetch("/api/v1/videos/list", { credentials: "include" }),
     get: (id: string) => fetch(`/api/v1/videos/${id}`, { credentials: "include" }),
     process: (id: string) => apiRequest("POST", `/api/v1/videos/${id}/process`),

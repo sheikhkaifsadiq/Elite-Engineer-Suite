@@ -85,26 +85,15 @@ export default function UploadPage() {
     setState("uploading");
     setUploadProgress(0);
 
-    const simulateProgress = () => {
-      let p = 0;
-      const interval = setInterval(() => {
-        p += Math.random() * 15;
-        if (p >= 90) { clearInterval(interval); p = 90; }
-        setUploadProgress(Math.min(p, 90));
-      }, 300);
-      return interval;
-    };
-
-    const interval = simulateProgress();
-
     try {
       const formData = new FormData();
       formData.append("video", file);
       if (title.trim()) formData.append("title", title.trim());
 
-      const res = await api.videos.upload(formData);
+      const res = await api.videos.upload(formData, (pct) => {
+        setUploadProgress(pct);
+      });
       const json = await res.json();
-      clearInterval(interval);
 
       if (!res.ok) {
         setState("error");
@@ -122,9 +111,8 @@ export default function UploadPage() {
         navigate(`/video/${json.data.video.id}`);
       }, 1500);
     } catch (err: any) {
-      clearInterval(interval);
       setState("error");
-      setErrorMsg(err.message || "Upload failed");
+      setErrorMsg(err.message || "Upload failed — please try again");
       setUploadProgress(0);
     }
   };

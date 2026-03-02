@@ -147,7 +147,17 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     }
   });
 
-  app.post("/api/v1/videos/upload", requireAuth as any, upload.single("video"), async (req: any, res) => {
+  app.post("/api/v1/videos/upload", requireAuth as any, (req: any, res: any, next: any) => {
+    upload.single("video")(req, res, (err: any) => {
+      if (err) {
+        if (err.code === "LIMIT_FILE_SIZE") {
+          return res.status(413).json({ success: false, error: "File too large. Maximum file size is 2GB.", code: 413 });
+        }
+        return res.status(400).json({ success: false, error: err.message || "Upload failed", code: 400 });
+      }
+      next();
+    });
+  }, async (req: any, res: any) => {
     try {
       if (!req.file) {
         return res.status(400).json({ success: false, error: "No video file provided", code: 400 });

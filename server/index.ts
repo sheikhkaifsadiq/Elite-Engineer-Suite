@@ -25,13 +25,14 @@ declare module "express-session" {
 
 app.use(
   express.json({
+    limit: "10mb",
     verify: (req, _res, buf) => {
       req.rawBody = buf;
     },
   }),
 );
 
-app.use(express.urlencoded({ extended: false }));
+app.use(express.urlencoded({ extended: false, limit: "10mb" }));
 
 const PgSession = connectPgSimple(session);
 const sessionPool = new Pool({ connectionString: process.env.DATABASE_URL });
@@ -107,6 +108,9 @@ app.use((req, res, next) => {
   }
 
   const port = parseInt(process.env.PORT || "5000", 10);
+  httpServer.requestTimeout = 10 * 60 * 1000;
+  httpServer.headersTimeout = 10 * 60 * 1000;
+  httpServer.keepAliveTimeout = 120 * 1000;
   httpServer.listen(
     { port, host: "0.0.0.0", reusePort: true },
     () => {
