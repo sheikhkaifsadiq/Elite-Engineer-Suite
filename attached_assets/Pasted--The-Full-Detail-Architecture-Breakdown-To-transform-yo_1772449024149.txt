@@ -1,0 +1,119 @@
+🏗️ The Full-Detail Architecture Breakdown
+
+To transform your app into an OpusClip competitor, the system must be broken down into 6 Distinct Micro-Systems.
+
+
+
+1. The Cloud Storage Layer (Amazon S3 / Cloudflare R2)
+
+The Problem: External Video APIs cannot read files from a user's local hard drive or a temporary Replit folder.
+
+The Solution: When a user uploads a video on your frontend, the backend must immediately stream that file directly to a cloud storage bucket.
+
+The Output: The storage bucket generates a public source_video_url (e.g., https://storage.clipora.ai/raw/vid_123.mp4).
+
+2. The External AI Generation Handoff
+
+The Problem: Local FFmpeg cannot generate smart B-roll, dynamic emojis, or OpusClip-level captions.
+
+The Solution: Your backend takes the source_video_url and makes an HTTP POST request to an external Video AI API (like Fal.ai, Sieve, or OpusClip's own API).
+
+The Payload: You send the video URL, instructions (e.g., "Extract top 3 viral moments, crop to 9:16, add dynamic captions"), and a Webhook URL (your server's listening address).
+
+The Database State: The API responds with an external_job_id. Your database creates a Job record marked as processing, tying it to the user.
+
+3. The Asynchronous Webhook Listener
+
+The Problem: Video generation takes 5 to 10 minutes. HTTP requests timeout after 30 seconds.
+
+The Solution: Your backend exposes a public endpoint: POST /api/v1/webhooks/video-done. Your server goes to sleep.
+
+The Execution: When the external API finishes generating the clips, it hits your webhook with a massive JSON file containing the URLs to the finished clips, the transcripts, the titles, and the virality scores. Your database updates the job to completed and stores all this data.
+
+4. The Anti-Theft & Watermark System
+
+The Problem: If you just display the final video on the frontend, users can "Inspect Element" and download the premium video for free.
+
+The Solution: The external API must be instructed to generate TWO versions of every clip:
+
+watermarked_url: Has your floating logo overlaid.
+
+clean_url: The premium, unbranded video.
+
+The UI Logic: The React frontend <video> player only receives the watermarked_url. The clean_url is never sent to the browser.
+
+The Protected Download: When a user clicks "Download" or "Export," a backend route checks user.plan. If they are a Free user, it blocks them and triggers the payment modal. If they are Pro, the backend fetches the clean_url and streams it to them securely.
+
+5. The Content Calendar & Auto-Publisher
+
+The Problem: Users want to schedule posts, not just post immediately.
+
+The Solution: A new database table called ScheduledPosts. When a user drags a clip onto the calendar, it saves the clip_id, target_platform, and publish_date.
+
+The Cron Job: A background worker runs every 60 seconds. It checks the ScheduledPosts table. If publish_date <= NOW(), it grabs the clean_url and the user's saved OAuth tokens, and sends a POST request to the YouTube/TikTok/Instagram API to publish the video autonomously.
+
+6. The Payment Gateway (Stripe)
+
+The Problem: You need to actually make money.
+
+The Solution: Integrate Stripe Checkout. When a user tries to download a clean video or schedule a post, it triggers a Stripe Checkout session. Upon successful payment, Stripe hits another webhook on your server (POST /api/v1/webhooks/stripe), which automatically changes the user's database record to plan = 'pro', instantly unlocking the features.
+
+🚨 The "Master Architect" Prompt for Lovable / Replit Agent
+
+To get the AI to build this massive system, you must feed it a prompt that leaves absolutely zero room for interpretation. Copy and paste this exact prompt along with your document:
+
+
+
+Role & Objective:
+
+You are the Elite Principal Full-Stack Engineer. We are upgrading this SaaS from a local prototype to an Enterprise-Grade API-Driven Platform. You must absolutely ABANDON the simulated local FFmpeg and Whisper processing. Do NOT build mock video processing. Do NOT take shortcuts. Do NOT write placeholder logic. If you hit your output limit, stop cleanly and ask me to type 'CONTINUE'.
+
+Module 1: Cloud Storage & API Handoff
+
+
+
+Update the /upload route. It must stream uploaded files to a Cloud Storage service (assume AWS S3 API compatibility) and return a public source_video_url.
+
+Create a new service: external_video_api.ts (or .py). It must expose a function that sends a POST request to an external Video AI API. The payload must include the source_video_url, instructions to generate viral 9:16 clips with captions, instructions to generate BOTH a clean video and a watermarked video (with a floating logo), and a webhook callback URL.
+
+Module 2: The Webhook Architecture
+
+
+
+Build a public, unauthenticated route: POST /api/v1/webhooks/video-done.
+
+This route will receive a JSON payload containing an array of clips (each containing clean_video_url, watermarked_video_url, title, transcript, and virality_score).
+
+The route must find the associated job in our database, update its status to completed, and insert the clips into the Clips table.
+
+Module 3: Anti-Theft & The Paywall
+
+
+
+Update the React Video Player component. It must ONLY load and display the watermarked_video_url. The clean_video_url must never be sent in the initial page load payload.
+
+Build a protected GET /api/v1/clips/{id}/download route. This route MUST check the database for user.plan == 'pro'.
+
+If the user is 'free', return a 403 status with a requires_upgrade: true flag.
+
+If 'pro', securely return the clean_video_url for download.
+
+Module 4: Stripe Payments
+
+
+
+Build the Stripe Checkout initialization route (POST /api/v1/checkout).
+
+Build the Stripe Webhook listener (POST /api/v1/webhooks/stripe). When it receives a checkout.session.completed event, it must update the associated user's database record to plan = 'pro'.
+
+Module 5: The Content Calendar & Auto-Publisher
+
+
+
+Create a ScheduledPosts table in the database (id, user_id, clip_id, platform, publish_time, status).
+
+Build a background Cron worker that polls this table every 60 seconds. If a post is due, it must retrieve the user's OAuth tokens, retrieve the clean_video_url, and execute the social media API posting logic.
+
+Execution:
+
+Acknowledge these 5 modules. Confirm you understand that local FFmpeg processing is banned and that the two-file watermark security architecture is mandatory. Begin building Module 1 immediately.
