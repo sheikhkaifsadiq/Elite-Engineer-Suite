@@ -1,37 +1,33 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
-  Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter
-} from "@/components/ui/dialog";
-import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import {
-  Link2, Link2Off, CheckCircle2, Plus, User, Shield, Zap, Loader2
+  Link2, Link2Off, CheckCircle2, Plus, User, Shield, Zap, ShieldCheck, AtSign, FileText
 } from "lucide-react";
 import { SiInstagram, SiTiktok, SiYoutube, SiX, SiFacebook, SiLinkedin } from "react-icons/si";
 import { api } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import { useToast } from "@/hooks/use-toast";
+import { ConnectAccountDialog } from "@/components/connect-account-dialog";
 import type { ConnectedAccount } from "@shared/schema";
 import { formatDistanceToNow } from "date-fns";
 
 const SOCIAL_PLATFORMS = [
-  { id: "instagram", label: "Instagram", icon: SiInstagram, color: "text-pink-500", placeholder: "@your_instagram" },
-  { id: "tiktok", label: "TikTok", icon: SiTiktok, color: "", placeholder: "@your_tiktok" },
-  { id: "youtube", label: "YouTube", icon: SiYoutube, color: "text-red-500", placeholder: "@your_channel" },
-  { id: "twitter", label: "X / Twitter", icon: SiX, color: "", placeholder: "@your_handle" },
-  { id: "facebook", label: "Facebook", icon: SiFacebook, color: "text-blue-600", placeholder: "Your Page Name" },
-  { id: "linkedin", label: "LinkedIn", icon: SiLinkedin, color: "text-blue-500", placeholder: "Your Profile" },
+  { id: "instagram", label: "Instagram", icon: SiInstagram, color: "text-pink-500" },
+  { id: "tiktok", label: "TikTok", icon: SiTiktok, color: "" },
+  { id: "youtube", label: "YouTube", icon: SiYoutube, color: "text-red-500" },
+  { id: "twitter", label: "X / Twitter", icon: SiX, color: "" },
+  { id: "facebook", label: "Facebook", icon: SiFacebook, color: "text-blue-600" },
+  { id: "linkedin", label: "LinkedIn", icon: SiLinkedin, color: "text-blue-500" },
 ];
 
 async function fetchConnectedAccounts() {
@@ -47,33 +43,19 @@ export default function SettingsPage() {
   const queryClient = useQueryClient();
   const [connectOpen, setConnectOpen] = useState(false);
   const [selectedPlatform, setSelectedPlatform] = useState<typeof SOCIAL_PLATFORMS[0] | null>(null);
-  const [platformUsername, setPlatformUsername] = useState("");
   const [disconnectId, setDisconnectId] = useState<string | null>(null);
+  const [expandedAccount, setExpandedAccount] = useState<string | null>(null);
 
   const { data: accounts, isLoading } = useQuery({
     queryKey: ["/api/v1/accounts/connected"],
     queryFn: fetchConnectedAccounts,
   });
 
-  const connectMutation = useMutation({
-    mutationFn: (data: { platform: string; platformUsername: string }) =>
-      api.accounts.connect(data),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/v1/accounts/connected"] });
-      toast({ title: "Account connected!", description: `${selectedPlatform?.label} linked successfully` });
-      setConnectOpen(false);
-      setPlatformUsername("");
-    },
-    onError: (err: any) => {
-      toast({ title: "Connection failed", description: err.message, variant: "destructive" });
-    },
-  });
-
   const disconnectMutation = useMutation({
     mutationFn: (id: string) => api.accounts.disconnect(id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/v1/accounts/connected"] });
-      toast({ title: "Account disconnected" });
+      toast({ title: "Account disconnected", description: "Your profile changes have been reverted" });
       setDisconnectId(null);
     },
     onError: () => {
@@ -86,16 +68,7 @@ export default function SettingsPage() {
 
   const handleOpenConnect = (platform: typeof SOCIAL_PLATFORMS[0]) => {
     setSelectedPlatform(platform);
-    setPlatformUsername("");
     setConnectOpen(true);
-  };
-
-  const handleConnect = () => {
-    if (!selectedPlatform || !platformUsername.trim()) return;
-    connectMutation.mutate({
-      platform: selectedPlatform.id,
-      platformUsername: platformUsername.trim(),
-    });
   };
 
   return (
@@ -157,7 +130,7 @@ export default function SettingsPage() {
                     Connected Social Accounts
                   </CardTitle>
                   <CardDescription className="mt-1">
-                    Connect your social media accounts to export clips directly
+                    Sign in to your social accounts with full permissions to enable direct publishing
                   </CardDescription>
                 </div>
                 {unconnectedPlatforms.length > 0 && (
@@ -193,37 +166,88 @@ export default function SettingsPage() {
                   {accounts.map(account => {
                     const platformInfo = SOCIAL_PLATFORMS.find(p => p.id === account.platform);
                     const Icon = platformInfo?.icon || Link2;
+                    const isExpanded = expandedAccount === account.id;
                     return (
-                      <div
-                        key={account.id}
-                        className="flex items-center gap-3 p-3 rounded-md border border-border"
-                        data-testid={`account-${account.platform}`}
-                      >
-                        <div className={`w-9 h-9 rounded-md bg-muted flex items-center justify-center`}>
-                          <Icon className={`w-4 h-4 ${platformInfo?.color || ""}`} />
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2">
-                            <p className="font-medium text-sm">{platformInfo?.label || account.platform}</p>
-                            <CheckCircle2 className="w-3 h-3 text-green-500" />
-                          </div>
-                          <p className="text-xs text-muted-foreground truncate">
-                            {account.platformUsername}
-                            {account.connectedAt && (
-                              <span> · Connected {formatDistanceToNow(new Date(account.connectedAt), { addSuffix: true })}</span>
-                            )}
-                          </p>
-                        </div>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          className="text-destructive gap-1.5 flex-shrink-0"
-                          onClick={() => setDisconnectId(account.id)}
-                          data-testid={`button-disconnect-${account.platform}`}
+                      <div key={account.id} data-testid={`account-${account.platform}`}>
+                        <div
+                          className="flex items-center gap-3 p-3 rounded-md border border-border cursor-pointer hover:bg-muted/30 transition-colors"
+                          onClick={() => setExpandedAccount(isExpanded ? null : account.id)}
                         >
-                          <Link2Off className="w-3 h-3" />
-                          Disconnect
-                        </Button>
+                          <div className="w-9 h-9 rounded-md bg-primary flex items-center justify-center">
+                            <span className="text-xs font-bold text-primary-foreground">C</span>
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2">
+                              <Icon className={`w-3.5 h-3.5 ${platformInfo?.color || ""}`} />
+                              <p className="font-medium text-sm">{platformInfo?.label || account.platform}</p>
+                              {account.authorized ? (
+                                <ShieldCheck className="w-3 h-3 text-green-500" />
+                              ) : (
+                                <CheckCircle2 className="w-3 h-3 text-green-500" />
+                              )}
+                              {account.profileModified && (
+                                <Badge variant="secondary" className="text-xs py-0">Profile Modified</Badge>
+                              )}
+                            </div>
+                            <p className="text-xs text-muted-foreground truncate">
+                              @{account.modifiedUsername || account.platformUsername}
+                              {account.connectedAt && (
+                                <span> · Connected {formatDistanceToNow(new Date(account.connectedAt), { addSuffix: true })}</span>
+                              )}
+                            </p>
+                          </div>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="text-destructive gap-1.5 flex-shrink-0"
+                            onClick={(e) => { e.stopPropagation(); setDisconnectId(account.id); }}
+                            data-testid={`button-disconnect-${account.platform}`}
+                          >
+                            <Link2Off className="w-3 h-3" />
+                            Disconnect
+                          </Button>
+                        </div>
+
+                        {isExpanded && (
+                          <div className="ml-12 mt-1 mb-2 p-3 rounded-md border border-border bg-muted/20 space-y-2 text-xs">
+                            {account.permissions && account.permissions.length > 0 && (
+                              <div>
+                                <p className="font-medium mb-1 text-muted-foreground">Permissions Granted:</p>
+                                <div className="flex flex-wrap gap-1">
+                                  {account.permissions.map((perm: string) => (
+                                    <Badge key={perm} variant="outline" className="text-xs py-0">
+                                      <ShieldCheck className="w-2.5 h-2.5 mr-1 text-green-500" />
+                                      {perm.replace(/_/g, " ")}
+                                    </Badge>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+                            {account.originalUsername && (
+                              <div className="flex items-center gap-2">
+                                <AtSign className="w-3 h-3 text-muted-foreground" />
+                                <span className="text-muted-foreground">Original username:</span>
+                                <span className="font-medium">@{account.originalUsername}</span>
+                                <span className="text-muted-foreground">→</span>
+                                <span className="font-medium text-primary">@{account.modifiedUsername}</span>
+                              </div>
+                            )}
+                            {account.modifiedBio && (
+                              <div className="flex items-start gap-2">
+                                <FileText className="w-3 h-3 text-muted-foreground mt-0.5" />
+                                <div>
+                                  <span className="text-muted-foreground">Bio: </span>
+                                  <span className="font-medium">{account.modifiedBio}</span>
+                                </div>
+                              </div>
+                            )}
+                            {account.platformEmail && (
+                              <div className="text-muted-foreground">
+                                Linked email: {account.platformEmail}
+                              </div>
+                            )}
+                          </div>
+                        )}
                       </div>
                     );
                   })}
@@ -256,7 +280,7 @@ export default function SettingsPage() {
                   <Link2 className="w-10 h-10 text-muted-foreground/30 mx-auto mb-3" />
                   <p className="font-medium text-sm mb-1">No accounts connected</p>
                   <p className="text-xs text-muted-foreground mb-4">
-                    Connect your social media accounts to export clips directly
+                    Sign in to your social media accounts to enable direct clip publishing
                   </p>
                   <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 max-w-sm mx-auto">
                     {SOCIAL_PLATFORMS.map(p => (
@@ -309,74 +333,19 @@ export default function SettingsPage() {
         </div>
       </div>
 
-      <Dialog open={connectOpen} onOpenChange={setConnectOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              {selectedPlatform && <selectedPlatform.icon className={`w-5 h-5 ${selectedPlatform.color}`} />}
-              Connect {selectedPlatform?.label}
-            </DialogTitle>
-            <DialogDescription>
-              Link your {selectedPlatform?.label} account to enable direct clip publishing
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4">
-            {unconnectedPlatforms.length > 1 && (
-              <div className="space-y-1.5">
-                <Label>Platform</Label>
-                <div className="grid grid-cols-3 gap-2">
-                  {unconnectedPlatforms.map(p => (
-                    <Button
-                      key={p.id}
-                      variant={selectedPlatform?.id === p.id ? "default" : "outline"}
-                      size="sm"
-                      className="gap-1.5"
-                      onClick={() => { setSelectedPlatform(p); setPlatformUsername(""); }}
-                    >
-                      <p.icon className={`w-3.5 h-3.5 ${selectedPlatform?.id === p.id ? "" : p.color}`} />
-                      {p.label}
-                    </Button>
-                  ))}
-                </div>
-              </div>
-            )}
-            <div className="space-y-1.5">
-              <Label htmlFor="platform-username">Username / Handle</Label>
-              <Input
-                id="platform-username"
-                placeholder={selectedPlatform?.placeholder || "Enter your username"}
-                value={platformUsername}
-                onChange={e => setPlatformUsername(e.target.value)}
-                data-testid="input-platform-username"
-              />
-              <p className="text-xs text-muted-foreground">
-                Enter your {selectedPlatform?.label} username to connect your account
-              </p>
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="ghost" onClick={() => setConnectOpen(false)}>Cancel</Button>
-            <Button
-              onClick={handleConnect}
-              disabled={!platformUsername.trim() || connectMutation.isPending}
-              className="gap-2"
-              data-testid="button-confirm-connect"
-            >
-              {connectMutation.isPending ? (
-                <Loader2 className="w-4 h-4 animate-spin" />
-              ) : <Link2 className="w-4 h-4" />}
-              Connect Account
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <ConnectAccountDialog
+        open={connectOpen}
+        onOpenChange={setConnectOpen}
+        platform={selectedPlatform}
+      />
 
       <AlertDialog open={!!disconnectId} onOpenChange={() => setDisconnectId(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Disconnect Account</AlertDialogTitle>
             <AlertDialogDescription>
-              You will no longer be able to export clips directly to this platform. You can reconnect anytime.
+              This will revoke all permissions and revert your profile changes (username, bio, and profile picture) back to their original state.
+              You can reconnect and re-authorize anytime.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -386,7 +355,7 @@ export default function SettingsPage() {
               className="bg-destructive text-destructive-foreground"
               data-testid="button-confirm-disconnect"
             >
-              Disconnect
+              Disconnect & Revert
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

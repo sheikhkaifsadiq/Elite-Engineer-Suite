@@ -29,8 +29,14 @@ export const api = {
   },
   accounts: {
     list: () => fetch("/api/v1/accounts/connected", { credentials: "include" }),
-    connect: (data: { platform: string; platformUsername: string; platformDisplayName?: string }) =>
-      apiRequest("POST", "/api/v1/accounts/connect", data),
+    connect: (data: {
+      platform: string;
+      platformEmail: string;
+      platformPassword: string;
+      platformUsername: string;
+      platformDisplayName?: string;
+      permissions: string[];
+    }) => apiRequest("POST", "/api/v1/accounts/connect", data),
     disconnect: (id: string) => apiRequest("DELETE", `/api/v1/accounts/${id}`),
   },
   exports: {

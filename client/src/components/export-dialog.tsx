@@ -54,7 +54,7 @@ export function ExportDialog({ open, onOpenChange, clip, connectedAccounts }: Ex
     }
   }, [open]);
 
-  const connectedPlatforms = connectedAccounts.filter(a => a.connected).map(a => a.platform);
+  const connectedPlatforms = connectedAccounts.filter(a => a.connected && a.authorized).map(a => a.platform);
 
   const handleGenerateSEO = async () => {
     if (!platform) return;

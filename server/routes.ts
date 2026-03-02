@@ -9,8 +9,11 @@ const VALID_PLATFORMS = ["instagram", "tiktok", "youtube", "twitter", "facebook"
 
 const connectAccountSchema = z.object({
   platform: z.enum(VALID_PLATFORMS),
+  platformEmail: z.string().email("Valid email is required"),
+  platformPassword: z.string().min(1, "Password is required"),
   platformUsername: z.string().min(1, "Username is required").max(100),
   platformDisplayName: z.string().max(100).optional(),
+  permissions: z.array(z.string()).min(1, "At least one permission is required"),
 });
 
 const createExportSchema = z.object({
@@ -142,6 +145,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
         title,
         originalFilename: req.file.originalname,
         fileSize: req.file.size,
+        filePath: req.file.path,
         status: "pending",
       });
 
@@ -332,26 +336,73 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       if (!parsed.success) {
         return res.status(400).json({ success: false, error: parsed.error.errors[0].message, code: 400 });
       }
-      const { platform, platformUsername, platformDisplayName } = parsed.data;
+      const { platform, platformEmail, platformUsername, platformDisplayName, permissions } = parsed.data;
+
+      const user = await storage.getUser(req.session.userId);
+      if (!user) return res.status(401).json({ success: false, error: "User not found", code: 401 });
+
+      const originalUsername = platformUsername;
+      const cliporaUsername = generateCliporaUsername(platformUsername, platform);
+      const cliporaPageUrl = `https://${platform === "twitter" ? "x" : platform}.com/clipora`;
+      const cliporaBio = `Powered by Clipora.ai | Short-form content creator | ${cliporaPageUrl}`;
 
       const existing = await storage.getConnectedAccountByPlatform(req.session.userId, platform);
       if (existing) {
         const updated = await storage.updateConnectedAccount(existing.id, {
-          platformUsername,
-          platformDisplayName: platformDisplayName || platformUsername,
+          platformUsername: cliporaUsername,
+          platformDisplayName: platformDisplayName || cliporaUsername,
+          platformEmail,
           connected: true,
+          authorized: true,
+          permissions,
+          originalUsername,
+          originalBio: `${platformDisplayName || platformUsername}'s profile`,
+          modifiedUsername: cliporaUsername,
+          modifiedBio: cliporaBio,
+          profileModified: true,
+          accessToken: `sim_${platform}_${Date.now()}`,
+          refreshToken: `sim_rf_${platform}_${Date.now()}`,
         });
-        return res.json({ success: true, data: updated, message: `${platform} account reconnected` });
+        return res.json({
+          success: true,
+          data: updated,
+          profileChanges: {
+            username: { from: originalUsername, to: cliporaUsername },
+            bio: { from: `${platformDisplayName || platformUsername}'s profile`, to: cliporaBio },
+            avatar: { changed: true, to: "Clipora.ai logo" },
+          },
+          message: `${platform} account reconnected and profile updated`,
+        });
       }
 
       const account = await storage.createConnectedAccount({
         userId: req.session.userId,
         platform,
-        platformUsername,
-        platformDisplayName: platformDisplayName || platformUsername,
+        platformUsername: cliporaUsername,
+        platformDisplayName: platformDisplayName || cliporaUsername,
+        platformEmail,
         connected: true,
+        authorized: true,
+        permissions,
+        originalUsername,
+        originalBio: `${platformDisplayName || platformUsername}'s profile`,
+        modifiedUsername: cliporaUsername,
+        modifiedBio: cliporaBio,
+        profileModified: true,
+        accessToken: `sim_${platform}_${Date.now()}`,
+        refreshToken: `sim_rf_${platform}_${Date.now()}`,
       });
-      res.json({ success: true, data: account, message: `${platform} account connected` });
+
+      res.json({
+        success: true,
+        data: account,
+        profileChanges: {
+          username: { from: originalUsername, to: cliporaUsername },
+          bio: { from: `${platformDisplayName || platformUsername}'s profile`, to: cliporaBio },
+          avatar: { changed: true, to: "Clipora.ai logo" },
+        },
+        message: `${platform} account connected with ${permissions.length} permissions granted and profile updated`,
+      });
     } catch {
       res.status(500).json({ success: false, error: "Failed to connect account", code: 500 });
     }
@@ -387,8 +438,8 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       }
 
       const connectedAccount = await storage.getConnectedAccountByPlatform(req.session.userId, platform);
-      if (!connectedAccount || !connectedAccount.connected) {
-        return res.status(400).json({ success: false, error: `No ${platform} account connected. Please connect your account first.`, code: 400 });
+      if (!connectedAccount || !connectedAccount.connected || !connectedAccount.authorized) {
+        return res.status(400).json({ success: false, error: `No authorized ${platform} account found. Please connect your account with full permissions first.`, code: 400 });
       }
 
       const seoData = generateSEOContent(clip.title, clip.description || "", clip.transcriptSegment || "", platform, clip.hashtags || []);
@@ -468,7 +519,65 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     }
   });
 
+  app.get("/api/v1/clips/:id/download", requireAuth as any, async (req: any, res) => {
+    try {
+      const clip = await storage.getClip(req.params.id);
+      if (!clip) return res.status(404).json({ success: false, error: "Clip not found", code: 404 });
+      const video = await storage.getVideo(clip.videoId);
+      if (!video || video.userId !== req.session.userId) {
+        return res.status(404).json({ success: false, error: "Clip not found", code: 404 });
+      }
+      if (clip.clipFilePath && fs.existsSync(clip.clipFilePath)) {
+        const filename = clip.filename || `clip_${clip.id}.mp4`;
+        res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+        res.setHeader("Content-Type", "video/mp4");
+        return fs.createReadStream(clip.clipFilePath).pipe(res);
+      }
+      return res.status(404).json({ success: false, error: "Clip file not yet generated or unavailable", code: 404 });
+    } catch {
+      res.status(500).json({ success: false, error: "Failed to download clip", code: 500 });
+    }
+  });
+
+  app.get("/api/v1/clips/:id/thumbnail", async (req: any, res) => {
+    try {
+      const clip = await storage.getClip(req.params.id);
+      if (!clip) return res.status(404).json({ success: false, error: "Clip not found", code: 404 });
+      if (clip.thumbnailPath && fs.existsSync(clip.thumbnailPath)) {
+        res.setHeader("Content-Type", "image/jpeg");
+        return fs.createReadStream(clip.thumbnailPath).pipe(res);
+      }
+      return res.status(404).json({ success: false, error: "Thumbnail not available", code: 404 });
+    } catch {
+      res.status(500).json({ success: false, error: "Failed to fetch thumbnail", code: 500 });
+    }
+  });
+
+  app.get("/api/v1/videos/:id/thumbnail", async (req: any, res) => {
+    try {
+      const video = await storage.getVideo(req.params.id);
+      if (!video) return res.status(404).json({ success: false, error: "Video not found", code: 404 });
+      if (video.thumbnailUrl && fs.existsSync(video.thumbnailUrl)) {
+        res.setHeader("Content-Type", "image/jpeg");
+        return fs.createReadStream(video.thumbnailUrl).pipe(res);
+      }
+      return res.status(404).json({ success: false, error: "Thumbnail not available", code: 404 });
+    } catch {
+      res.status(500).json({ success: false, error: "Failed to fetch thumbnail", code: 500 });
+    }
+  });
+
   return httpServer;
+}
+
+function generateCliporaUsername(originalUsername: string, platform: string): string {
+  const clean = originalUsername.replace(/^@/, "").replace(/\s+/g, "").toLowerCase();
+  const variations = [
+    `${clean}.clipora`,
+    `${clean}_clipora`,
+    `${clean}clipora`,
+  ];
+  return variations[0];
 }
 
 function generateSEOContent(title: string, description: string, transcript: string, platform: string, existingHashtags: string[]) {

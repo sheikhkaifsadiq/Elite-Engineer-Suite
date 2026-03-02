@@ -57,15 +57,33 @@ export function ClipCard({ clip, onDelete, onUpdate, onExport }: ClipCardProps) 
   };
 
   const handleDownload = () => {
-    toast({ title: "Download started", description: `${clip.title} — Preparing clip for download` });
+    if (clip.clipFilePath) {
+      const link = document.createElement("a");
+      link.href = `/api/v1/clips/${clip.id}/download`;
+      link.download = clip.filename || `clip_${clip.id}.mp4`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      toast({ title: "Download started", description: `${clip.title} — Downloading clip` });
+    } else {
+      toast({ title: "Clip file not available", description: "The clip file has not been generated yet. Please process the video first.", variant: "destructive" });
+    }
   };
 
   return (
     <>
       <Card className="hover-elevate" data-testid={`card-clip-${clip.id}`}>
         <CardContent className="p-0">
-          <div className="relative h-28 bg-gradient-to-br from-primary/20 via-primary/10 to-muted rounded-t-lg flex items-center justify-center">
-            <div className="text-center">
+          <div className="relative h-28 bg-gradient-to-br from-primary/20 via-primary/10 to-muted rounded-t-lg flex items-center justify-center overflow-hidden">
+            {clip.thumbnailPath ? (
+              <img
+                src={`/api/v1/clips/${clip.id}/thumbnail`}
+                alt={clip.title}
+                className="w-full h-full object-cover"
+                onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
+              />
+            ) : null}
+            <div className={`text-center ${clip.thumbnailPath ? "absolute inset-0 flex flex-col items-center justify-center bg-black/40" : ""}`}>
               <p className="text-xs font-mono text-muted-foreground">{formatTime(clip.startTime)} → {formatTime(clip.endTime)}</p>
               <p className="text-xs text-muted-foreground mt-1">{clip.duration.toFixed(0)}s</p>
             </div>
